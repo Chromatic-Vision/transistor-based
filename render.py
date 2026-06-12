@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import pygame
+
+
+def _parse_expression(expr: str) -> float:
+    def n() -> str | None:
+        nonlocal expr
+        out = ''
+        tokens = '/+-'
+        while expr and expr[0] not in tokens:
+            out += expr[0]
+            expr = expr[1:]
+        if not out and expr and expr[0] in tokens:
+            c = expr[0]
+            expr = expr[1:]
+            return c
+        return out or None
+
+    tokens = []
+    while c := n():
+        tokens.append(c)
+
+    def parse_add() -> float:
+        nonlocal tokens
+        lhs = parse_div()
+        if tokens and tokens[0] == '+':
+            tokens = tokens[1:]
+            rhs = parse_div()
+            return lhs + rhs
+        if tokens and tokens[0] == '-':
+            tokens = tokens[1:]
+            rhs = parse_div()
+            return lhs - rhs
+        return lhs
+
+    def parse_div() -> float:
+        nonlocal tokens
+        lhs = parse_int()
+        if tokens and tokens[0] == '/':
+            tokens = tokens[1:]
+            rhs = parse_int()
+            return lhs / rhs
+        return lhs
+
+    def parse_int() -> float:
+        nonlocal tokens
+        t = tokens[0]
+        tokens = tokens[1:]
+        return int(t)
+
+    return parse_add()
+
+
+def render_path(screen: pygame.Surface, path: str, color, scale: float):
+    x = 0
+    y = 0
+    ox, oy = x, y
+    for l in path.split('\n'):
+        l, _, _ = l.partition('#')
+        l = l.strip()
+        if not l:
+            continue
+        if l == 'R':
+            pygame.draw.line(screen, color, (x, y), (ox, oy))
+            x, y = ox, oy
+            continue
+
+        command, cx, cy = l.split(' ')
+        cx = _parse_expression(cx) * scale
+        cy = _parse_expression(cy) * scale
+
+        if command == 'M':
+            x = cx
+            y = cy
+            ox, oy = x, y
+        elif command == 'L':
+            pygame.draw.line(screen, color, (x, y), (cx, cy))
+            x = cx
+            y = cy
+        elif command == 'l':
+            pygame.draw.line(screen, color, (x, y), (x + cx, y + cy))
+            x += cx
+            y += cy
+
+
+if __name__ == '__main__':
+    assert abs(_parse_expression('1/3') - 0.3333333) < 0.01
+    assert abs(_parse_expression('1/6') - 0.1666666) < 0.01
+    assert abs(_parse_expression('1/2-1/12') - (1 / 2 - 1 / 12)) < 0.01
+
+    pygame.init()
+    screen = pygame.display.set_mode((800, 800))
+
+    render_path(screen, '''
+    M 0 1/3
+    L 1/10 1/3
+
+    M 0 2/3
+    L 1/10 2/3
+
+    M 2/10 1/6
+    L 5/6 1/2
+    L 2/10 5/6
+    L 3/10 1/2
+    R
+
+    # X part
+    M 1/10 1/6
+    L 2/10 1/2
+    L 1/10 5/6
+
+    # # Not bubble
+    # M 5/6 1/2
+    # L 11/12 1/2-1/12
+    # L 1 1/2
+    # L 11/12 1/2+1/12
+    # R
+
+    M 5/6 1/2
+    l 1/6 0
+
+    # Square outline
+    M 0 0
+    L 1 0
+    L 1 1
+    L 0 1
+    R
+    ''', (255, 100, 100), 100)
+
+    clock = pygame.time.Clock()
+    while not pygame.event.get(pygame.QUIT):
+        clock.tick(60)
+        pygame.display.update()
