@@ -52,7 +52,10 @@ def _parse_expression(expr: str) -> float:
     return parse_add()
 
 
-def render_path(screen: pygame.Surface, path: str, color, scale: float):
+def render_path(screen: pygame.Surface, path: str, color, pos, scale: float):
+    def screen_pos(p: tuple[float, float]) -> tuple[float, float]:
+        return pos[0] + p[0] * scale, pos[1] + p[1] * scale
+
     x = 0
     y = 0
     ox, oy = x, y
@@ -62,26 +65,37 @@ def render_path(screen: pygame.Surface, path: str, color, scale: float):
         if not l:
             continue
         if l == 'R':
-            pygame.draw.line(screen, color, (x, y), (ox, oy))
+            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((ox, oy)))
             x, y = ox, oy
             continue
 
         command, cx, cy = l.split(' ')
-        cx = _parse_expression(cx) * scale
-        cy = _parse_expression(cy) * scale
+        cx = _parse_expression(cx)
+        cy = _parse_expression(cy)
 
         if command == 'M':
             x = cx
             y = cy
             ox, oy = x, y
         elif command == 'L':
-            pygame.draw.line(screen, color, (x, y), (cx, cy))
+            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((cx, cy)))
             x = cx
             y = cy
         elif command == 'l':
-            pygame.draw.line(screen, color, (x, y), (x + cx, y + cy))
+            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((x + cx, y + cy)))
             x += cx
             y += cy
+
+
+_render_file_cache: dict[str, str] = {}
+
+
+def render(screen: pygame.Surface, name: str, color, pos, scale: float) -> None:
+    global _render_file_cache
+    if name not in _render_file_cache:
+        with open(f'gates/{name}.txt') as file:
+            _render_file_cache[name] = file.read()
+    render_path(screen, _render_file_cache[name], color, pos, scale)
 
 
 if __name__ == '__main__':
@@ -126,7 +140,7 @@ if __name__ == '__main__':
     L 1 1
     L 0 1
     R
-    ''', (255, 100, 100), 100)
+    ''', (255, 100, 100), (50, 50), 100)
 
     clock = pygame.time.Clock()
     while not pygame.event.get(pygame.QUIT):
