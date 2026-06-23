@@ -134,10 +134,10 @@ struct World *world__new(block_pos_t size, const char *update_fragment_shader_na
 	GLuint gate_textures;
 	glGenTextures(1, &gate_textures);
 	glBindTexture(GL_TEXTURE_2D, gate_textures);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, gates_height * gates_amount, gates_height, 0, GL_RGB_INTEGER, GL_UNSIGNED_INT, gates_surface);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, gates_height * gates_amount, gates_height, 0, GL_RGB, GL_UNSIGNED_BYTE, gates_surface);
 	glGenerateMipmap(GL_TEXTURE_2D);
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
 	world->gates_texture = gate_textures;
@@ -249,6 +249,15 @@ void world__render(struct World *world, struct Camera camera) {
 		glUniform1i(transform_loc, 0);
 	}
 
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, world->gates_texture);
+	transform_loc = glGetUniformLocation(world->render_shader_program, "gates_texture");
+	if (transform_loc == -1) {
+		fprintf(stderr, "could not set gates_texture uniform\n");
+	} else {
+		glUniform1i(transform_loc, 1);
+	}
+
 	struct Matrix matrix = matrix_ident;
 	// object to world
 	unsigned int scale = world->size / 2;
@@ -262,6 +271,7 @@ void world__render(struct World *world, struct Camera camera) {
 	} else {
 		glUniformMatrix4fv(transform_loc, 1, GL_TRUE, matrix.matrix);
 	}
+
 	// camera__set_shader_transform(camera, world->render_shader_program, (struct Vector){0.1, 0.1, 0.0}, (struct Vector){0.0}, 0.0);
 	// glDrawArrays(GL_TRIANGLES, 0, 8 * 3);
 	glDrawArrays(GL_TRIANGLES, 0, 6 * 3);
