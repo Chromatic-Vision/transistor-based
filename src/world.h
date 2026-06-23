@@ -24,6 +24,9 @@ struct World {
 	GLuint color_shader_program;
 
 	GLuint vao, vbo;
+
+	int gates_size;
+	GLuint gates_texture;
 };
 
 /* Returns NULL on failure, binds a different framebuffer. */

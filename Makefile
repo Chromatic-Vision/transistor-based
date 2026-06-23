@@ -26,7 +26,7 @@ else
 	EXE ?= $(PROJECT)
 endif
 
-SRCFILES = main.c glad.c shader.c error.c readall.c matrix.c camera.c world.c
+SRCFILES = main.c glad.c shader.c error.c readall.c matrix.c camera.c world.c stb_image.c
 
 OBJFILES = $(addprefix build/, $(patsubst %.c, %.o, $(SRCFILES))) build/gates.png.o
 # SHOBJFILES := $(OBJFILES:%.o=%.so)
@@ -43,6 +43,7 @@ build/%.o: src/%.c Makefile $(BUILD_MARKER) | build
 build:
 	mkdir build
 
+# 120 is the resolution because it is (2 * lcm(2, 3, 6, 10, 12)), all the numbers used in the gate vector graphics
 assets/gates.png: assets/gates/ assets/render.py
 	cd assets/ && python3 render.py gates.png 120 3
 build/gates.png.o: assets/gates.png

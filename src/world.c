@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "stb_image.h"
 #include "glad.h"
 
 #include "world.h"
@@ -17,6 +18,8 @@ static const float plane[] = {
 	1.0, 1.0, 0.0,  1.0, 1.0,
 };
 
+extern unsigned char _binary_assets_gates_png_start[];
+extern unsigned char _binary_assets_gates_png_end[];
 struct World *world__new(block_pos_t size, const char *update_fragment_shader_name, const char *render_fragment_shader_name) {
 	struct World *world = NULL;
 	world = malloc(sizeof(*world));
@@ -111,6 +114,34 @@ struct World *world__new(block_pos_t size, const char *update_fragment_shader_na
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 5, NULL);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 5, (void*)(sizeof(float) * 3));
+
+	// Load gate textures
+	unsigned char *gates_surface = NULL;
+	int gates_width, gates_height;
+	gates_surface = stbi_load_from_memory(
+			_binary_assets_gates_png_start,
+			(size_t)(_binary_assets_gates_png_end - _binary_assets_gates_png_start),
+			&gates_width, &gates_height,
+			NULL, 3
+	);
+	if (gates_surface == NULL) {
+		fprintf(stderr, "Failed to load gates texture: %s\n", stbi_failure_reason());
+		goto fail;
+	}
+
+	int gates_amount = gates_width / gates_height;
+
+	GLuint gate_textures;
+	glGenTextures(1, &gate_textures);
+	glBindTexture(GL_TEXTURE_2D, gate_textures);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, gates_height * gates_amount, gates_height, 0, GL_RGB_INTEGER, GL_UNSIGNED_INT, gates_surface);
+	glGenerateMipmap(GL_TEXTURE_2D);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	world->gates_texture = gate_textures;
+	world->gates_size = gates_height;
 
 	return world;
 
