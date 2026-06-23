@@ -52,9 +52,9 @@ def _parse_expression(expr: str) -> float:
     return parse_add()
 
 
-def render_path(screen: pygame.Surface, path: str, color, pos, scale: float):
+def render_path(screen: pygame.Surface, path: str, color, pos, scale: float, stroke_width: int = 1):
     def screen_pos(p: tuple[float, float]) -> tuple[float, float]:
-        return pos[0] + p[0] * scale, pos[1] + p[1] * scale
+        return round(pos[0] + p[0] * scale), round(pos[1] + p[1] * scale)
 
     x = 0
     y = 0
@@ -65,7 +65,7 @@ def render_path(screen: pygame.Surface, path: str, color, pos, scale: float):
         if not l:
             continue
         if l == 'R':
-            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((ox, oy)))
+            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((ox, oy)), stroke_width)
             x, y = ox, oy
             continue
 
@@ -78,11 +78,11 @@ def render_path(screen: pygame.Surface, path: str, color, pos, scale: float):
             y = cy
             ox, oy = x, y
         elif command == 'L':
-            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((cx, cy)))
+            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((cx, cy)), stroke_width)
             x = cx
             y = cy
         elif command == 'l':
-            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((x + cx, y + cy)))
+            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((x + cx, y + cy)), stroke_width)
             x += cx
             y += cy
 
@@ -90,12 +90,12 @@ def render_path(screen: pygame.Surface, path: str, color, pos, scale: float):
 _render_file_cache: dict[str, str] = {}
 
 
-def render(screen: pygame.Surface, name: str, color, pos, scale: float) -> None:
+def render(screen: pygame.Surface, name: str, color, pos, scale: float, stroke_width: int = 1) -> None:
     global _render_file_cache
     if name not in _render_file_cache:
         with open(f'gates/{name}.txt') as file:
             _render_file_cache[name] = file.read()
-    render_path(screen, _render_file_cache[name], color, pos, scale)
+    render_path(screen, _render_file_cache[name], color, pos, scale, stroke_width=stroke_width)
 
 
 if __name__ == '__main__':
@@ -104,45 +104,63 @@ if __name__ == '__main__':
     assert abs(_parse_expression('1/2-1/12') - (1 / 2 - 1 / 12)) < 0.01
 
     pygame.init()
-    screen = pygame.display.set_mode((800, 800))
+    # screen = pygame.display.set_mode((800, 800))
 
-    render_path(screen, '''
-    M 0 1/3
-    L 1/10 1/3
+    # render_path(screen, '''
+    # M 0 1/3
+    # L 1/10 1/3
 
-    M 0 2/3
-    L 1/10 2/3
+    # M 0 2/3
+    # L 1/10 2/3
 
-    M 2/10 1/6
-    L 5/6 1/2
-    L 2/10 5/6
-    L 3/10 1/2
-    R
-
-    # X part
-    M 1/10 1/6
-    L 2/10 1/2
-    L 1/10 5/6
-
-    # # Not bubble
-    # M 5/6 1/2
-    # L 11/12 1/2-1/12
-    # L 1 1/2
-    # L 11/12 1/2+1/12
+    # M 2/10 1/6
+    # L 5/6 1/2
+    # L 2/10 5/6
+    # L 3/10 1/2
     # R
 
-    M 5/6 1/2
-    l 1/6 0
+    # # X part
+    # M 1/10 1/6
+    # L 2/10 1/2
+    # L 1/10 5/6
 
-    # Square outline
-    M 0 0
-    L 1 0
-    L 1 1
-    L 0 1
-    R
-    ''', (255, 100, 100), (50, 50), 100)
+    # # # Not bubble
+    # # M 5/6 1/2
+    # # L 11/12 1/2-1/12
+    # # L 1 1/2
+    # # L 11/12 1/2+1/12
+    # # R
 
-    clock = pygame.time.Clock()
-    while not pygame.event.get(pygame.QUIT):
-        clock.tick(60)
-        pygame.display.update()
+    # M 5/6 1/2
+    # l 1/6 0
+
+    # # Square outline
+    # M 0 0
+    # L 1 0
+    # L 1 1
+    # L 0 1
+    # R
+    # ''', (255, 100, 100), (50, 50), 100)
+
+    # clock = pygame.time.Clock()
+    # while not pygame.event.get(pygame.QUIT):
+    #     clock.tick(60)
+    #     pygame.display.update()
+
+    import sys, os
+    if len(sys.argv) != 4:
+        raise ValueError(f'Expected three arguments ({sys.argv[0]} output.png size stroke_width)')
+    out_path = sys.argv[1]
+    size = int(sys.argv[2])
+    stroke_width = int(sys.argv[3])
+
+    gate_files = os.listdir('gates/')
+    s = pygame.Surface((size * len(gate_files), size))
+
+    for i, filename in enumerate(gate_files):
+        render(s, filename.removesuffix('.txt'), (255, 255, 255), (i * size, 0), size, stroke_width=stroke_width)
+
+    pygame.image.save(s, out_path)
+
+    pygame.quit()
+
