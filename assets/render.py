@@ -148,17 +148,18 @@ if __name__ == '__main__':
     #     pygame.display.update()
 
     import sys, os
-    if len(sys.argv) != 4:
-        raise ValueError(f'Expected three arguments ({sys.argv[0]} output.png size stroke_width)')
+    if len(sys.argv) != 5:
+        raise ValueError(f'Expected four arguments ({sys.argv[0]} output.png size stroke_width border)')
     out_path = sys.argv[1]
     size = int(sys.argv[2])
     stroke_width = int(sys.argv[3])
+    border = int(sys.argv[4])
 
     gate_files = os.listdir('gates/')
-    s = pygame.Surface((size * len(gate_files), size))
+    s = pygame.Surface((size * len(gate_files) + 2 * len(gate_files) * border, size + 2 * border))
 
     for i, filename in enumerate(gate_files):
-        render(s, filename.removesuffix('.txt'), (255, 255, 255), (i * size, 0), size, stroke_width=stroke_width)
+        render(s, filename.removesuffix('.txt'), (255, 255, 255), (i * size + border + 2 * border * i, border), size, stroke_width=stroke_width)
 
     pygame.image.save(s, out_path)
 
