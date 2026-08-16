@@ -93,7 +93,7 @@ _render_file_cache: dict[str, str] = {}
 def render(screen: pygame.Surface, name: str, color, pos, scale: float, stroke_width: int = 1) -> None:
     global _render_file_cache
     if name not in _render_file_cache:
-        with open(f'gates/{name}.txt') as file:
+        with open(f'../gates/{name}.txt') as file:
             _render_file_cache[name] = file.read()
     render_path(screen, _render_file_cache[name], color, pos, scale, stroke_width=stroke_width)
 
