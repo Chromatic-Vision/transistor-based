@@ -79,6 +79,63 @@ void matrix__print(struct Matrix m) {
 	}
 }
 
+static inline _Bool zero(float x, float epsilon) {
+	if (x < 0) {
+		x = -x;
+	}
+	return x < epsilon;
+}
+
+struct Matrix matrix__inverse(struct Matrix m, float epsilon) {
+	// Assumes the diagonal values are non-zero
+
+	struct Matrix inverse = matrix_ident;
+	float mult = 1.0 / m.matrix[0];
+	for (unsigned int i = 0; i < 4; i++) {
+		m.matrix[i] *= mult;
+
+		inverse.matrix[i] *= mult;
+	}
+
+	for (unsigned int y = 1; y <= 3; y++) {
+		for (unsigned int x = 0; x < y; x++) {
+			if (!zero(m.matrix[x + y * 4], epsilon)) {
+				float mult = 1.0 / m.matrix[x + y * 4];
+				for (unsigned int i = 0; i < 4; i++) {
+					m.matrix[i + y * 4] *= mult;
+					m.matrix[i + y * 4] -= m.matrix[i + x * 4];
+
+					inverse.matrix[i + y * 4] *= mult;
+					inverse.matrix[i + y * 4] -= inverse.matrix[i + x * 4];
+				}
+			}
+		}
+
+		float mult = 1.0 / m.matrix[y + y * 4];
+		for (unsigned int i = 0; i < 4; i++) {
+			m.matrix[i + y * 4] *= mult;
+
+			inverse.matrix[i + y * 4] *= mult;
+		}
+	}
+	// printf("\n");
+	// matrix__print(m);
+	// matrix__print(inverse);
+
+	for (unsigned int x = 3; x > 0; x--) {
+		for (int y = x - 1; y >= 0; y--) {
+			float mult = m.matrix[x + y * 4];
+			for (unsigned int i = 0; i < 4; i++) {
+				m.matrix[i + y * 4] -= m.matrix[i + x * 4] * mult;
+
+				inverse.matrix[i + y * 4] -= inverse.matrix[i + x * 4] * mult;
+			}
+		}
+	}
+
+	return inverse;
+}
+
 const struct Vector VECTOR_UP = {0.0, 1.0, 0.0};
 const struct Vector VECTOR_FORWARD = {0.0, 0.0, -1.0};
 

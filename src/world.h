@@ -34,7 +34,7 @@ struct World *world__new(block_pos_t size, const char *update_fragment_shader_na
 void world__free(struct World *);
 
 /* Binds a different framebuffer. Sets *block_type, if mouse_press == 1. Mouse pos is relative to center of screen. */
-void world__update(struct World *, struct Camera, int mouse_x, int mouse_y, block_type_t *block_type, int mouse_press);
+void world__update(struct World *, struct Camera, float mouse_x, float mouse_y, block_type_t *block_type, int mouse_press);
 void world__render(struct World *, struct Camera);
 
 #endif // WORLD_H_

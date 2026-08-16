@@ -33,6 +33,10 @@ void main() {
 				/ vec2(gates_amount, 1.0)
 	));
 
+	if (machine.a != 0u) {
+		machine_frag += vec4(1.0, 0.0, 0.0, 0.0);
+	}
+
 	// FragColor = vec4(machine_frag.r, (vec4(texture(ourTexture, tex_coord)) / vec4(255.0) * vec4(0.0, 1.0, 1.0, 0.0)).yzw);
 	FragColor = machine_frag;
 	// FragColor = vec4(texture(gates_texture, fract(tex_coord)));

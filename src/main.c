@@ -12,9 +12,6 @@
 #include "camera.h"
 #include "world.h"
 
-// TODO: rewrite renderer using hybrid ray tracing/marching and rasterization (parallax ray marching):
-//           https://www.youtube.com/watch?v=h81I8hR56vQ
-
 long unsigned int frame = 0;
 static const float min_zoom = 1.0;
 struct Camera camera = {
@@ -50,12 +47,34 @@ void log_callback(GLenum source,
 }
 
 int main() {
-	// struct Matrix matrix = matrix__mult(
-	// 		matrix__gen_rotate(0.0, 0.0, 1.0, 1.0),
-	// 		// matrix__gen_translate(0.0, 0.0, 0.0),
-	// 		matrix__gen_translate(0.0, 0.0, 0.0)
-	// );
+	// struct Matrix matrix = matrix__gen_rotate(1.0 / 14.0, 2.0 / 14.0, 3.0 / 14.0, 1.0);
+	// matrix__mult(&matrix, matrix__gen_translate(1.0, 2.0, 3.0));
+	// matrix__mult(&matrix, matrix__gen_perspective(1.2, 2.0, 2.0, 100.0));
+
+	// printf("Matrix:\n");
 	// matrix__print(matrix);
+
+	// struct Matrix inverse = matrix__inverse(matrix, 1e-4);
+	// printf("\nInverse:\n");
+	// matrix__print(inverse);
+
+	// printf("\nMatrix * inverse:\n");
+	// struct Matrix a = matrix;
+	// matrix__mult(&a, inverse);
+	// matrix__print(a);
+
+	// printf("\nInverse * matrix:\n");
+	// a = inverse;
+	// matrix__mult(&a, matrix);
+	// matrix__print(a);
+
+	// struct Matrix matrix = matrix_ident;
+	// unsigned int scale = 500;
+	// matrix__mult(&matrix, matrix__gen_scale(scale, scale, scale));
+	// camera__world_to_clip(camera, &matrix);
+	// matrix = matrix__inverse(matrix, 1e-4);
+
+	// matrix__apply(matrix, (struct Vector){.x = 300.0, .y = 300.0})
 
 	// return 0;
 
@@ -179,7 +198,7 @@ int main() {
 	REBIND_FRAMEBUFFER;
 
 	// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-	glEnable(GL_DEPTH_TEST);
+	// glEnable(GL_DEPTH_TEST);
 	if (GLAD_GL_KHR_debug) {
 		glEnable(GL_DEBUG_OUTPUT);
 		glDebugMessageCallback(log_callback, 0);
@@ -260,7 +279,8 @@ int main() {
 				}
 			}
 			block_type_t machine_type = 1;
-			world__update(world, camera, mouse_x - viewport_width / 2, mouse_y - viewport_height / 2, &machine_type/*TODO: block selection*/, press);
+			// world__update(world, camera, mouse_x - viewport_width / 2, mouse_y - viewport_height / 2, &machine_type/*TODO: block selection*/, press);
+			world__update(world, camera, ((float)mouse_x / viewport_width - 0.5) * 2.0, ((float)mouse_y / viewport_height - 0.5) * 2.0, &machine_type/*TODO: block selection*/, press);
 		}
 		REBIND_FRAMEBUFFER;
 		glEnable(GL_DEPTH_TEST);

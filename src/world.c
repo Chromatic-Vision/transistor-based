@@ -8,6 +8,28 @@
 #include "world.h"
 #include "shader.h"
 
+//   | | |
+//   0 1 2
+// -3.4.5.6-
+//   7 8 9
+// - . . . -
+//
+// - . . . -
+//
+//   | | |
+
+// Format:
+// | 0 - 24 | 25 - 49 | 50 - 74 | 75 - 100 | ...  | 123 - 126 | 127 - 127 |
+// |---------------------------------------|------| Gate type | Powered   |
+// | 4x connection                         |      | 0: Empty  | Only defined if Gate type != 0
+
+// Connection (size = 25):
+// | 0  -  1 | 2 - 3 | 4  -  23 | 24  -  24 |
+// |---------|-------|----------|-----------|
+// | 4  From | 4  To | 20 Power | Direction |
+// |         |       |   From   | 0: horizontal
+//                                1: vertical
+
 static const float plane[] = {
 	-1.0, -1.0, 0.0,  0.0, 0.0,
 	1.0, -1.0, 0.0,  1.0, 0.0,
@@ -135,6 +157,7 @@ struct World *world__new(block_pos_t size, const char *update_fragment_shader_na
 	glGenTextures(1, &gate_textures);
 	glBindTexture(GL_TEXTURE_2D, gate_textures);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, gates_height * gates_amount, gates_height, 0, GL_RGB, GL_UNSIGNED_BYTE, gates_surface);
+	// TODO: Use render.py to generate vector mipmaps
 	glGenerateMipmap(GL_TEXTURE_2D);
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
@@ -167,7 +190,7 @@ void world__free(struct World *world) {
 	free(world);
 }
 
-void world__update(struct World *world, struct Camera camera, int mouse_x, int mouse_y, block_type_t *block_type, int mouse_press) {
+void world__update(struct World *world, struct Camera camera, float mouse_x, float mouse_y, block_type_t *block_type, int mouse_press) {
 	// TODO: allow user to place machines (Draw single point)
 
 	glBindFramebuffer(GL_FRAMEBUFFER, world->back_buffer);
@@ -199,13 +222,21 @@ void world__update(struct World *world, struct Camera camera, int mouse_x, int m
 	if (mouse_press == 1 || mouse_press == 3) {
 		block_type_t place = mouse_press == 0 ? *block_type : 0;
 
-		float x = ((float)mouse_x + camera.pos.x) / (float)world->size;
-		float y = ((float)mouse_y * -1.0 + camera.pos.y) / (float)world->size;
+		// float x = ((float)mouse_x + camera.pos.x) / (float)world->size;
+		// float y = ((float)mouse_y * -1.0 + camera.pos.y) / (float)world->size;
 
 		glUseProgram(world->color_shader_program);
-		struct Matrix matrix = matrix_ident;
-		matrix__mult(&matrix, matrix__gen_scale(1.0 / world->size, 1.0 / world->size, 1.0));
-		matrix__mult(&matrix, matrix__gen_translate(x, y, 0.0));
+		struct Matrix proj_matrix = matrix_ident;
+		// matrix__mult(&matrix, matrix__gen_scale(0.5 / world->size / camera.pos.z, 0.5 / world->size / camera.pos.z, 1.0));
+		// matrix__mult(&matrix, matrix__gen_translate(x, y, 0.0));
+		// object to world
+		unsigned int scale = world->size / 2;
+		matrix__mult(&proj_matrix, matrix__gen_scale(scale, scale, scale));
+		camera__world_to_clip(camera, &proj_matrix);
+		proj_matrix = matrix__inverse(proj_matrix, 1e-4);
+		// matrix__mult(&matrix, matrix__gen_scale(scale, scale, scale));
+		struct Matrix matrix = matrix__gen_translate(mouse_x * 10.0, -mouse_y * 10.0, -camera.pos.z / 2.0);
+		matrix__mult(&matrix, proj_matrix);
 
 		transform_loc = glGetUniformLocation(world->color_shader_program, "transform");
 		if (transform_loc == -1) {
@@ -218,10 +249,10 @@ void world__update(struct World *world, struct Camera camera, int mouse_x, int m
 		if (transform_loc == -1) {
 			fprintf(stderr, "could not get color uniform location\n");
 		} else {
-			glUniform4ui(transform_loc, place, 0, 0, 0);
+			glUniform4ui(transform_loc, place, 0, 0, 1);
 		}
 
-		printf("Rendering pixel x: %d, y: %d, type: %u\n", mouse_x, mouse_y, *block_type);
+		printf("Rendering pixel x: %f, y: %f, type: %u\n", mouse_x, mouse_y, *block_type);
 		glDrawArrays(GL_TRIANGLES, 0, 6 * 3);
 	}
 
@@ -261,7 +292,7 @@ void world__render(struct World *world, struct Camera camera) {
 	struct Matrix matrix = matrix_ident;
 	// object to world
 	unsigned int scale = world->size / 2;
-	 matrix__mult(&matrix, matrix__gen_scale(scale, scale, scale));
+	matrix__mult(&matrix, matrix__gen_scale(scale, scale, scale));
 
 	camera__world_to_clip(camera, &matrix);
 

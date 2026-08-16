@@ -15,6 +15,7 @@ struct Matrix matrix__gen_scale(double x, double y, double z);
 
 void matrix__mult(struct Matrix *a, struct Matrix b);
 void matrix__print(struct Matrix);
+struct Matrix matrix__inverse(struct Matrix, float epsilon);
 
 struct Vector {
 	float x, y, z;
