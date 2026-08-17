@@ -36,7 +36,7 @@ while run:
     if keys[pygame.K_w] or keys[pygame.K_UP]:
         camera_dy += -1
 
-    level.update_camera(screen, camera_dx * CAMERA_SPEED, camera_dy * CAMERA_SPEED, dt)
+    level.update_camera_and_render(screen, camera_dx * CAMERA_SPEED, camera_dy * CAMERA_SPEED, dt)
 
     pygame.display.update()
 
