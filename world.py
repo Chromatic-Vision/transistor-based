@@ -1,8 +1,11 @@
 import abc
+import enum
 import math
 import threading
 
 import pygame
+
+import render
 
 
 class Tile(abc.ABC):
@@ -10,10 +13,43 @@ class Tile(abc.ABC):
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
         pass
 
+    @staticmethod
+    def line_width_from_size(size_: int) -> int:
+        w = math.ceil(size_ / (12 + 1))
+        if w <= 0:
+            return 1
+        else:
+            return w
+
+
+class GateType(enum.StrEnum):
+    AND = enum.auto()
+    NAND = enum.auto()
+    NOR = enum.auto()
+    OR = enum.auto()
+    XNOR = enum.auto()
+    XOR = enum.auto()
+
+
+_gate_cache: dict[tuple[GateType, int], pygame.Surface] = {}
+
 
 class Gate(Tile):
+    def __init__(self, gate_type: GateType, input_a: 'Gate', input_b: 'Gate'):
+        self._gate_type = gate_type
+        self._input_a = input_a
+        self._input_b = input_b
+
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
-        pass
+        k = (self._gate_type, size_)
+        if k not in _gate_cache:
+            s = pygame.Surface((size_, size_))
+            s.set_colorkey((0, 0, 0))
+            render.render(s, str(self._gate_type).upper(), (255, 255, 255), (0, 0), size_, self.line_width_from_size(size_))
+            _gate_cache[k] = s
+        s = _gate_cache[k]
+
+        screen.blit(s, (x, y))
 
     def get_activated(self) -> bool:
         return True
@@ -26,11 +62,14 @@ class Gate(Tile):
 
 
 class NullGate(Gate):
+    def __init__(self, activated=False):
+        self._activated = activated
+
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
         pass
 
     def get_activated(self) -> bool:
-        return False
+        return self._activated
 
     def latch_input(self):
         pass
@@ -67,7 +106,7 @@ class Wires(Tile):
             delta = (b - a) % 4
             return delta
 
-        wire_width = math.ceil(size_ / (12 + 1))
+        wire_width = self.line_width_from_size(size_)
 
         for from_, (to, gate) in self.connections.items():
             from_x = x + WIRE_RENDER_POSITION[WIRES_POSITIONS[from_][0]] * size_
@@ -117,7 +156,9 @@ class Level:
         raise NotImplementedError('Level.update')
 
     def _render_loop(self):
-        g = Gate()
+        g = Gate(GateType.AND, NullGate(), NullGate())
+        self._level[(0, 0)] = g
+
         w = Wires()
         w.connections[0] = (3, g)
         w.connections[1] = (4, g)
