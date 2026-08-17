@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import abc
 import enum
 import math
 import threading
+import typing
 
 import pygame
 
@@ -10,9 +13,6 @@ import render
 
 
 class Tile(abc.ABC):
-    DEACTIVATED_COLOR = (255, 255, 255)
-    ACTIVATED_COLOR = (80, 150, 255)
-
     @abc.abstractmethod
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
         pass
@@ -26,9 +26,32 @@ class Tile(abc.ABC):
             return w
 
 
+class Activation(enum.Enum):
+    FLOATING    = enum.auto(), False, (75,  90,  115)
+    COMPETING   = enum.auto(), False, (156, 32,  6)
+    OFF         = enum.auto(), False, (255, 255, 255)
+    PULLED_DOWN = enum.auto(), False, (255, 255, 255)
+    PULLED_UP   = enum.auto(), True,  (80,  150, 255)
+    ON          = enum.auto(), True,  (80,  150, 255)
+
+    def __new__(cls, value, activated: bool, color: tuple[int, int, int]) -> typing.Self:
+        member = object.__new__(cls)
+        member._value_ = value
+        member.activated = activated
+        member.color = color
+        return member
+
+    @classmethod
+    def from_bool(cls, activated: bool) -> Activation:
+        if activated:
+            return cls.ON
+        else:
+            return cls.OFF
+
+
 class TileWithActivation(Tile, abc.ABC):
     @abc.abstractmethod
-    def get_activated(self) -> bool:
+    def get_activated(self) -> Activation:
         pass
 
 
@@ -57,7 +80,7 @@ class Gate(TileWithActivation):
         if k not in _gate_cache:
             s = pygame.Surface((size_, size_))
             s.set_colorkey((0, 0, 0))
-            render.render(s, str(self._gate_type).upper(), self.DEACTIVATED_COLOR, (0, 0), size_, self.line_width_from_size(size_))
+            render.render(s, str(self._gate_type).upper(), Activation.OFF.color, (0, 0), size_, self.line_width_from_size(size_))
             _gate_cache[k] = s
         s = _gate_cache[k]
 
@@ -65,8 +88,8 @@ class Gate(TileWithActivation):
             s = pygame.transform.rotate(s, (-self._rotation + 1) * 90)
         screen.blit(s, (x, y))
 
-    def get_activated(self) -> bool:
-        return True
+    def get_activated(self) -> Activation:
+        return Activation.OFF
 
     def latch_input(self):
         raise NotImplementedError('latch_input')
@@ -76,13 +99,13 @@ class Gate(TileWithActivation):
 
 
 class NullGate(TileWithActivation):
-    def __init__(self, activated=False):
+    def __init__(self, activated: Activation = Activation.OFF):
         self._activated = activated
 
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
         pass
 
-    def get_activated(self) -> bool:
+    def get_activated(self) -> Activation:
         return self._activated
 
 
@@ -92,10 +115,7 @@ class Button(TileWithActivation):
         self._state = False
 
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
-        if self._state:
-            c = self.ACTIVATED_COLOR
-        else:
-            c = self.DEACTIVATED_COLOR
+        c = Activation.from_bool(self._state).color
         pygame.draw.circle(screen, c, (x + size_ / 2, y + size_ / 2), size_ / 2, self.line_width_from_size(size_))
         if self._latching:
             pygame.draw.circle(screen, c, (x + size_ / 2, y + size_ / 2), self.line_width_from_size(size_))
@@ -105,8 +125,8 @@ class Button(TileWithActivation):
         if not self._latching:
             self._state = False
 
-    def get_activated(self) -> bool:
-        return self._state
+    def get_activated(self) -> Activation:
+        return Activation.from_bool(self._state)
 
     def mouse_press(self, pressed: bool, clicked: bool):
         if self._latching:
@@ -158,10 +178,7 @@ class Wires(Tile):
             # from is now the vertical part,
             # to the horizontal
 
-            if gate.get_activated():
-                c = self.ACTIVATED_COLOR
-            else:
-                c = self.DEACTIVATED_COLOR
+            c = gate.get_activated().color
 
             a = _angle(from_, to)
             # print(f'{a=}, from=({from_x / size_}, {from_y / size_}), to=({to_x / size_}, {to_y / size_})')
