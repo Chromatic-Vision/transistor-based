@@ -35,10 +35,12 @@ _gate_cache: dict[tuple[GateType, int], pygame.Surface] = {}
 
 
 class Gate(Tile):
-    def __init__(self, gate_type: GateType, input_a: 'Gate', input_b: 'Gate'):
+    def __init__(self, gate_type: GateType, input_a: 'Gate', input_b: 'Gate', rotation: int):
         self._gate_type = gate_type
         self._input_a = input_a
         self._input_b = input_b
+
+        self._rotation = rotation
 
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
         k = (self._gate_type, size_)
@@ -49,6 +51,8 @@ class Gate(Tile):
             _gate_cache[k] = s
         s = _gate_cache[k]
 
+        if self._rotation != 1:
+            s = pygame.transform.rotate(s, (-self._rotation + 1) * 90)
         screen.blit(s, (x, y))
 
     def get_activated(self) -> bool:
@@ -156,7 +160,11 @@ class Level:
         raise NotImplementedError('Level.update')
 
     def _render_loop(self):
-        g = Gate(GateType.AND, NullGate(), NullGate())
+        for i in range(4):
+            g = Gate(GateType.XNOR, NullGate(), NullGate(), i)
+            self._level[(i, 6)] = g
+
+        g = Gate(GateType.AND, NullGate(), NullGate(), 2)
         self._level[(0, 0)] = g
 
         w = Wires()
@@ -179,7 +187,7 @@ class Level:
                 self._last_camera_pos = (self.camera_x, self.camera_y)
 
     def _render(self, screen: pygame.Surface):
-        print('camera position:', self.camera_x, self.camera_y)
+        # print('camera position:', self.camera_x, self.camera_y)
         for y_idx in range(-1, math.ceil(screen.get_height() / self.tile_size) + 1):
             y = y_idx * self.tile_size - self.camera_y % 1.0 * self.tile_size
             y_pos = y_idx + math.floor(self.camera_y)
