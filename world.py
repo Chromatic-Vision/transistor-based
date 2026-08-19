@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import enum
+import json
 import math
 import threading
 import typing
@@ -24,6 +25,37 @@ class Tile(abc.ABC):
             return 1
         else:
             return w
+
+    def serialise(self) -> bytes:
+        # TODO: return str(self.__class__) + ' ' + self._serialise()
+        c = str(self.__class__.__name__).encode('utf-8')
+        assert b' ' not in c
+        return c + b' ' + self._serialise()
+
+    @abc.abstractmethod
+    def _serialise(self) -> bytes:
+        pass
+
+    @classmethod
+    def _subclasses(cls) -> list[typing.Self]:
+        out = []
+        for s in cls.__subclasses__():
+            out.append(s)
+            out += s._subclasses()
+        return out
+
+    @classmethod
+    def deserialise(cls, data: bytes) -> Tile:
+        class_name, _, data = data.partition(b' ')
+        class_name = class_name.decode('utf-8')
+        assert class_name in Tile._subclasses()
+
+        return globals()[class_name]._deserialise(data)
+
+    @classmethod
+    @abc.abstractmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        pass
 
 
 class Activation(enum.Enum):
@@ -124,6 +156,23 @@ class Gate(TileWithActivation):
     def latch_output(self):
         self._activation = self._new_activation
 
+    def _serialise(self) -> bytes:
+        return json.dumps({
+            'gate_type': self._gate_type,
+            'rotation': self._rotation,
+
+            'activation': self._activation.name,
+            'new_activation': self._new_activation.name,
+        }).encode('utf-8')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        data = json.loads(json.loads(data.decode('utf-8')))
+        tile = cls(GateType(data['gate_type']), NullGate(Activation.COMPETING), NullGate(Activation.COMPETING), data['rotation'])
+        tile._activation = Activation.__members__[data['activation']]
+        tile._new_activation = Activation.__members__[data['new_activation']]
+
+
 
 class NullGate(TileWithActivation):
     def __init__(self, activated: Activation = Activation.OFF):
@@ -134,6 +183,13 @@ class NullGate(TileWithActivation):
 
     def get_activated(self) -> Activation:
         return self._activated
+
+    def _serialise(self) -> bytes:
+        return self._activated.name.encode('utf-8')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        return cls(Activation.__members__[data.decode('utf-8')])
 
 
 class LogicalWire(TileWithActivation):
@@ -187,6 +243,13 @@ class LogicalWire(TileWithActivation):
     def latch_output(self):
         self._activation = self._new_activation
 
+    def _serialise(self) -> bytes:
+        raise ValueError('LogicalWire should not be saved')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        raise ValueError('LogicalWire should not be saved')
+
 
 class Button(TileWithActivation):
     def __init__(self, latching: bool):
@@ -213,6 +276,19 @@ class Button(TileWithActivation):
                 self._state = not self._state
         else:
             self._state = pressed
+
+    def _serialise(self) -> bytes:
+        return json.dumps({
+            'latching': self._latching,
+            'state': self._state
+        }).encode('utf-8')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        data = json.loads(data.decode('utf-8'))
+        tile = cls(data['latching'])
+        tile._state = data['state']
+        return tile
 
 
 WIRES_POSITIONS = [
@@ -265,6 +341,18 @@ class Wires(Tile):
                 pygame.draw.line(screen, c, (from_x, from_y), (from_x, to_y), wire_width)
                 pygame.draw.line(screen, c, (to_x, to_y), (from_x, to_y), wire_width)
                 pygame.draw.circle(screen, c, (from_x, to_y), wire_width)
+
+    def _serialise(self) -> bytes:
+        return json.dumps(
+            {from_: to for from_, (to, _) in self.connections.items()}
+        ).encode('utf-8')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        data = json.loads(data.decode('utf-8'))
+        tile =  cls()
+        tile.connections = {from_: (to, NullGate(Activation.COMPETING)) for from_, to in data}
+        return tile
 
 
 class Level:
