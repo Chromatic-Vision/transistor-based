@@ -2,6 +2,8 @@ import abc
 import json
 import typing
 
+# Inspired by Factorio: https://www.factorio.com/blog/post/fff-147#:~:text=Clients%20receive%20merged%20package%20once%20per%20tick
+
 
 class Packet(abc.ABC):
     @abc.abstractmethod

@@ -35,6 +35,7 @@ class Activation(enum.Enum):
     ON          = enum.auto(), True,  (80,  150, 255)
 
     def __new__(cls, value, activated: bool, color: tuple[int, int, int]) -> typing.Self:
+        # https://softwareengineering.stackexchange.com/a/440441
         member = object.__new__(cls)
         member._value_ = value
         member.activated = activated
@@ -107,6 +108,58 @@ class NullGate(TileWithActivation):
 
     def get_activated(self) -> Activation:
         return self._activated
+
+
+class LogicalWire(TileWithActivation):
+    def __init__(self, inputs: list[TileWithActivation]):
+        self.inputs = inputs
+        self._activation = Activation.FLOATING
+        self._new_activation = Activation.FLOATING
+
+    def get_activated(self) -> Activation:
+        return self._activation
+
+    def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
+        raise ValueError('LogicalWire cannot be rendered')
+
+    def latch_input(self):
+        activation = Activation.FLOATING
+        for i in self.inputs:
+            a = i.get_activated()
+            match activation:
+                case Activation.FLOATING:
+                    activation = a
+                case Activation.COMPETING:
+                    pass
+                case Activation.OFF:
+                    if a == Activation.COMPETING or a == Activation.ON:
+                        activation = Activation.COMPETING
+                case Activation.PULLED_DOWN:
+                    if a == Activation.COMPETING:
+                        activation = Activation.COMPETING
+                    elif a == Activation.OFF:
+                        activation = Activation.OFF
+                    elif a == Activation.ON:
+                        activation = Activation.ON
+                    elif a == Activation.PULLED_UP:
+                        activation = Activation.COMPETING
+                case Activation.PULLED_UP:
+                    if a == Activation.COMPETING:
+                        activation = Activation.COMPETING
+                    elif a == Activation.OFF:
+                        activation = Activation.OFF
+                    elif a == Activation.ON:
+                        activation = Activation.ON
+                    elif a == Activation.PULLED_DOWN:
+                        activation = Activation.COMPETING
+                case Activation.ON:
+                    if a == Activation.COMPETING or a == Activation.OFF:
+                        activation = Activation.COMPETING
+
+        self._new_activation = activation
+
+    def latch_output(self):
+        self._activation = self._new_activation
 
 
 class Button(TileWithActivation):
@@ -231,9 +284,9 @@ class Level:
 
         w = Wires()
         w.connections[0] = (3, g)
-        w.connections[1] = (4, g)
+        w.connections[1] = (4, b)
         w.connections[2] = (5, g)
-        self._level[(1, 0)] = w
+        self._level[(-1, 1)] = w
 
         clock = pygame.time.Clock()
         while self._run:
