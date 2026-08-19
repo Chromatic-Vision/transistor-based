@@ -65,7 +65,7 @@ class GateType(enum.StrEnum):
     XOR = enum.auto()
 
 
-_gate_cache: dict[tuple[GateType, int], pygame.Surface] = {}
+_gate_cache: dict[tuple[GateType, int, tuple[int, int, int]], pygame.Surface] = {}
 
 
 class Gate(TileWithActivation):
@@ -76,12 +76,15 @@ class Gate(TileWithActivation):
 
         self._rotation = rotation
 
+        self._activation: Activation = Activation.FLOATING
+        self._new_activation: Activation = Activation.FLOATING
+
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
-        k = (self._gate_type, size_)
+        k = (self._gate_type, size_, self._activation.color)
         if k not in _gate_cache:
             s = pygame.Surface((size_, size_))
             s.set_colorkey((0, 0, 0))
-            render.render(s, str(self._gate_type).upper(), Activation.OFF.color, (0, 0), size_, self.line_width_from_size(size_))
+            render.render(s, str(self._gate_type).upper(), self._activation.color, (0, 0), size_, self.line_width_from_size(size_))
             _gate_cache[k] = s
         s = _gate_cache[k]
 
@@ -90,13 +93,36 @@ class Gate(TileWithActivation):
         screen.blit(s, (x, y))
 
     def get_activated(self) -> Activation:
-        return Activation.OFF
+        return self._activation
 
     def latch_input(self):
-        raise NotImplementedError('latch_input')
+        a: Activation = self._input_a.get_activated()
+        b: Activation = self._input_b.get_activated()
+        if a == Activation.COMPETING or b == Activation.COMPETING:
+            self._new_activation = Activation.COMPETING
+            return
+        if a == Activation.FLOATING or b == Activation.FLOATING:
+            self._new_activation = Activation.FLOATING
+
+        a: bool = a.activated
+        b: bool = b.activated
+        if self._gate_type == GateType.AND:
+            self._new_activation = Activation.from_bool(a and b)
+        elif self._gate_type == GateType.NAND:
+            self._new_activation = Activation.from_bool(not (a and b))
+        elif self._gate_type == GateType.NOR:
+            self._new_activation = Activation.from_bool(not (a or b))
+        elif self._gate_type == GateType.OR:
+            self._new_activation = Activation.from_bool(a or b)
+        elif self._gate_type == GateType.XNOR:
+            self._new_activation = Activation.from_bool(a is b)
+        elif self._gate_type == GateType.XOR:
+            self._new_activation = Activation.from_bool(a is not b)
+        else:
+            raise NotImplementedError(self._gate_type)
 
     def latch_output(self):
-        raise NotImplementedError('latch_output')
+        self._activation = self._new_activation
 
 
 class NullGate(TileWithActivation):
@@ -244,6 +270,7 @@ class Wires(Tile):
 class Level:
     def __init__(self, screen_size: tuple[int, int]):
         self._level: dict[tuple[int, int], Tile] = {}
+        self._logical_wires: list[LogicalWire] = []
         self._gates: list[Gate] = []
         self.camera_x = 0.0  # The top-left of the screen is at this position
         self.camera_y = 0.0
@@ -270,12 +297,19 @@ class Level:
                 raise NotImplementedError(f'Handling packet of type {type(packet)} in Level._update')
 
         # TODO: Update the gates
+        for (x, y), tile in self._level.items():
+            if isinstance(tile, Gate):
+                tile.latch_input()
+        for logical_wire in self._logical_wires:
+            logical_wire.latch_input()
+
+        for (x, y), tile in self._level.items():
+            if isinstance(tile, Gate):
+                tile.latch_output()
+        for logical_wire in self._logical_wires:
+            logical_wire.latch_output()
 
     def _render_loop(self):
-        for i in range(4):
-            g = Gate(GateType.XNOR, NullGate(), NullGate(), i)
-            self._level[(i, 6)] = g
-
         b = Button(True)
         self._level[(-1, 0)] = b
 
@@ -288,9 +322,15 @@ class Level:
         w.connections[2] = (5, g)
         self._level[(-1, 1)] = w
 
+        last = g
+        for i in range(4):
+            g = Gate(GateType.XNOR, last, NullGate(), i)
+            self._level[(i, 6)] = g
+            last = g
+
         clock = pygame.time.Clock()
         while self._run:
-            clock.tick(4)  # 20
+            clock.tick(20)  # 20
 
             packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
             self._update(packets)
