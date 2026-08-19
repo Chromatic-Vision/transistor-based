@@ -27,7 +27,6 @@ class Tile(abc.ABC):
             return w
 
     def serialise(self) -> bytes:
-        # TODO: return str(self.__class__) + ' ' + self._serialise()
         c = str(self.__class__.__name__).encode('utf-8')
         assert b' ' not in c
         return c + b' ' + self._serialise()
@@ -384,7 +383,6 @@ class Level:
             else:
                 raise NotImplementedError(f'Handling packet of type {type(packet)} in Level._update')
 
-        # TODO: Update the gates
         for (x, y), tile in self._level.items():
             if isinstance(tile, Gate):
                 tile.latch_input()
@@ -426,20 +424,21 @@ class Level:
             s: pygame.Surface = self._render_back_buffer
             s.fill((30, 0, 0))
 
-            self._render(s)
+            camera_x, camera_y = self.camera_x, self.camera_y
+            self._render(s, camera_x, camera_y)
 
             with self._render_buffer_swap_lock:
                 self._render_front_buffer, self._render_back_buffer = self._render_back_buffer, self._render_front_buffer
-                self._last_camera_pos = (self.camera_x, self.camera_y)
+                self._last_camera_pos = (camera_x, camera_y)
 
-    def _render(self, screen: pygame.Surface):
+    def _render(self, screen: pygame.Surface, camera_x: float, camera_y: float):
         # print('camera position:', self.camera_x, self.camera_y)
         for y_idx in range(-1, math.ceil(screen.get_height() / self.tile_size) + 1):
-            y = y_idx * self.tile_size - self.camera_y % 1.0 * self.tile_size
-            y_pos = y_idx + math.floor(self.camera_y)
+            y = y_idx * self.tile_size - camera_y % 1.0 * self.tile_size
+            y_pos = y_idx + math.floor(camera_y)
             for x_idx in range(-1, math.ceil(screen.get_width() / self.tile_size) + 1):
-                x = x_idx * self.tile_size - self.camera_x % 1.0 * self.tile_size
-                x_pos = x_idx + math.floor(self.camera_x)
+                x = x_idx * self.tile_size - camera_x % 1.0 * self.tile_size
+                x_pos = x_idx + math.floor(camera_x)
 
                 # if self._level[()]
                 if x_pos == -1 and y_pos == -1:
