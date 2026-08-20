@@ -13,9 +13,6 @@ class Gui:
 
         self._mouse_held: tuple[int, int] | None = None
 
-        import world
-        self._render_wires: dict[tuple[int, int], world.Wires] = {}
-
     def update_and_render(self, screen: pygame.Surface, level: world.Level):
         # TODO: One class for placing wires and another for placing gates
         # TODO: Also different cursors
@@ -35,9 +32,6 @@ class Gui:
             return delta
 
         import world
-
-        for (x, y), wire in self._render_wires.items():
-            wire.render(screen, round((x - level.camera_x) * level.tile_size), round((y - level.camera_y) * level.tile_size), math.ceil(level.tile_size))
 
         mouse_pos = pygame.mouse.get_pos()
         mouse_press = pygame.mouse.get_pressed(3)
@@ -123,7 +117,7 @@ class Gui:
                 try:
                     from_angle = pos_to_angle(from_)
                 except ValueError:
-                    from_angle = ((to_angle // 3 + 2) % 4) * 3 + (2 - to_angle % 3)
+                    from_angle = world.Wires.opposite_angle(to_angle)
 
                 # print(f'{from_=} {from_angle=}, {to=} {to_angle=}')
 
@@ -135,16 +129,24 @@ class Gui:
                 a = wire_angle(from_angle, to_angle)
                 is_parallel_if_should_be = not (a == 2 and from_angle % 3 + to_angle % 3 != 2)
                 if a != 0 and is_parallel_if_should_be:
-                    w = self._render_wires.get(tile_pos)
-                    if w is None:
-                        w = world.Wires()
+                    w = level.get_tile_at_pos(*tile_pos)
+                    if w is None or not isinstance(w, world.Wires):
+                        c = {}
                     else:
-                        if from_angle in w.connections and to_angle not in w.connections:
-                            w.connections[to_angle] = (from_angle, w.connections[from_angle][1])
+                        c = w.connections.copy()
+                    del w
 
-                    if not (to_angle in w.connections and w.connections[to_angle][0] == from_angle):
-                        w.connections[from_angle] = (to_angle, world.NullGate())
-                        self._render_wires[tile_pos] = w
+                    if from_angle in c and c[from_angle][0] not in c:
+                        c[c[from_angle][0]] = (from_angle, c[from_angle][1])
+
+                    if not (to_angle in c and c[to_angle][0] == from_angle):
+                        if from_angle in c and to_angle not in c:
+                            c[to_angle] = (from_angle, world.NullGate())
+                        else:
+                            c[from_angle] = (to_angle, world.NullGate())
+                        w = world.Wires()
+                        w.connections = c
+                        level.place_tile_at_pos(tile_pos[0], tile_pos[1], w)
                         self._mouse_held = (mouse_wire_pos_x, mouse_wire_pos_y)
 
                         print(f'Made a connection: {from_=} {from_angle=}, {to=} {to_angle=}')

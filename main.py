@@ -23,6 +23,7 @@ try:
             if event.type == pygame.QUIT:
                 run = False
             elif event.type == pygame.MOUSEWHEEL:
+                # TODO: Zoom into the middle of the screen instead of top-left
                 if event.y > 0:
                     level.tile_size *= 1.1
                 elif event.y < 0:

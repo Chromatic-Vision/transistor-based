@@ -14,6 +14,27 @@ import net
 import render
 
 
+T = typing.TypeVar('T')
+
+class MutSet(typing.Generic[T]):
+    def __init__(self) -> None:
+        self._s: dict[int, T] = dict()
+
+    def add(self, item: T):
+        i = id(item)
+        if i not in self._s:
+            self._s[i] = item
+
+    def remove(self, item: T):
+        self._s.pop(id(item))
+
+    def __contains__(self, item):
+        return id(item) in self._s
+
+    def __iter__(self):
+        return self._s.values().__iter__()
+
+
 class Tile(abc.ABC):
     @abc.abstractmethod
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
@@ -106,7 +127,7 @@ class Gate(TileWithActivation):
         self._input_a = input_a
         self._input_b = input_b
 
-        self._rotation = rotation
+        self.rotation = rotation
 
         self._activation: Activation = Activation.FLOATING
         self._new_activation: Activation = Activation.FLOATING
@@ -120,8 +141,8 @@ class Gate(TileWithActivation):
             _gate_cache[k] = s
         s = _gate_cache[k]
 
-        if self._rotation != 1:
-            s = pygame.transform.rotate(s, (-self._rotation + 1) * 90)
+        if self.rotation != 1:
+            s = pygame.transform.rotate(s, (-self.rotation + 1) * 90)
         screen.blit(s, (x, y))
 
     def get_activated(self) -> Activation:
@@ -159,7 +180,7 @@ class Gate(TileWithActivation):
     def _serialise(self) -> bytes:
         return json.dumps({
             'gate_type': self._gate_type,
-            'rotation': self._rotation,
+            'rotation': self.rotation,
 
             'activation': self._activation.name,
             'new_activation': self._new_activation.name,
@@ -344,6 +365,10 @@ class Wires(Tile):
             else:
                 pygame.draw.line(screen, c, (from_x, from_y), (to_x, to_y), wire_width)
 
+    @staticmethod
+    def opposite_angle(angle: int) -> int:
+        return ((angle // 3 + 2) % 4) * 3 + (2 - angle % 3)
+
     def _serialise(self) -> bytes:
         return json.dumps(
             {from_: to for from_, (to, _) in self.connections.items()}
@@ -360,7 +385,7 @@ class Wires(Tile):
 class Level:
     def __init__(self, screen_size: tuple[int, int]):
         self._level: dict[tuple[int, int], Tile] = {}
-        self._logical_wires: list[LogicalWire] = []
+        self._logical_wires: MutSet[LogicalWire] = MutSet()
         self._gates: list[Gate] = []
         self.camera_x = 0.0  # The top-left of the screen is at this position
         self.camera_y = 0.0
@@ -368,6 +393,7 @@ class Level:
 
         self._last_camera_pos = (self.camera_x, self.camera_y)
         self._renderer_to_server_queue: list[net.Packet] = []
+        self._new_packets: list[net.Packet] = []
 
         self._render_back_buffer = pygame.Surface(screen_size)
         self._render_front_buffer = pygame.Surface(screen_size)
@@ -385,8 +411,53 @@ class Level:
             if isinstance(packet, net.PacketButtonActivate):
                 if (t := self._level.get((packet.x, packet.y))) and isinstance(t, Button):
                     t.mouse_press(packet.press, packet.click)
+
+            elif isinstance(packet, net.PacketTilePlace):
+                i = (packet.x, packet.y)
+                if i not in self._level:
+                    self._level[i] = packet.tile
+
+                tile = self._level[i]
+                if isinstance(tile, Wires):
+                    connections = set()
+                    for angle in tile.connections:
+                        connections.add(angle)
+                        connections.add(tile.connections[angle][0])
+
+                    for c in connections:
+                        self._update_wire_connections(packet.x, packet.y, c)
+
+                        offset = WIRES_POSITIONS[c // 3 * 3 + 1]
+                        offset = (offset[0] // 2, offset[1] // 2)
+                        self._update_wire_connections(packet.x + offset[0], packet.y + offset[1], Wires.opposite_angle(c))
+                else:
+                    raise NotImplementedError(f'Updating connections of tile type {self._level[i].__class__.__name__}')
+
+            elif isinstance(packet, net.PacketTileRemove):
+                i = (packet.x, packet.y)
+
+                tile = self._level[i]
+                connections = set()
+                if isinstance(tile, Wires):
+                    for angle in tile.connections:
+                        connections.add(angle)
+                        connections.add(tile.connections[angle][0])
+                else:
+                    raise NotImplementedError(f'Removing connections of tile type {tile.__class__.__name__}')
+
+                if i in self._level:
+                    self._level.pop(i)
+
+                for c in connections:
+                    self._update_wire_connections(packet.x, packet.y, c)
+
             else:
                 raise NotImplementedError(f'Handling packet of type {type(packet)} in Level._update')
+
+        for logical_wire in self._logical_wires:
+            logical_wire.latch_input()
+        for logical_wire in self._logical_wires:
+            logical_wire.latch_output()
 
         for (x, y), tile in self._level.items():
             if isinstance(tile, Gate):
@@ -401,40 +472,35 @@ class Level:
             logical_wire.latch_output()
 
     def _render_loop(self):
-        b = Button(True)
-        self._level[(-1, 0)] = b
+        try:
+            b = Button(True)
+            self._level[(-1, 0)] = b
 
-        g = Gate(GateType.OR, b, NullGate(), 2)
-        self._level[(0, 0)] = g
+            g = Gate(GateType.OR, b, NullGate(), 2)
+            self._level[(0, 0)] = g
 
-        w = Wires()
-        w.connections[0] = (3, g)
-        w.connections[1] = (4, b)
-        w.connections[2] = (5, g)
-        self._level[(-1, 1)] = w
+            for i in range(4):
+                g = Gate(GateType.XNOR, NullGate(), NullGate(), 0)
+                self._level[(i * 2, 6)] = g
 
-        last = g
-        for i in range(4):
-            g = Gate(GateType.XNOR, last, NullGate(), i)
-            self._level[(i, 6)] = g
-            last = g
+            clock = pygame.time.Clock()
+            while self._run:
+                clock.tick(20)  # 20
 
-        clock = pygame.time.Clock()
-        while self._run:
-            clock.tick(20)  # 20
+                packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
+                self._update(packets)
 
-            packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
-            self._update(packets)
+                s: pygame.Surface = self._render_back_buffer
+                s.fill((30, 0, 0))
 
-            s: pygame.Surface = self._render_back_buffer
-            s.fill((30, 0, 0))
+                camera_x, camera_y = self.camera_x, self.camera_y
+                self._render(s, camera_x, camera_y)
 
-            camera_x, camera_y = self.camera_x, self.camera_y
-            self._render(s, camera_x, camera_y)
-
-            with self._render_buffer_swap_lock:
-                self._render_front_buffer, self._render_back_buffer = self._render_back_buffer, self._render_front_buffer
-                self._last_camera_pos = (camera_x, camera_y)
+                with self._render_buffer_swap_lock:
+                    self._render_front_buffer, self._render_back_buffer = self._render_back_buffer, self._render_front_buffer
+                    self._last_camera_pos = (camera_x, camera_y)
+        finally:
+            self._run = False
 
     def _render(self, screen: pygame.Surface, camera_x: float, camera_y: float):
         # print('camera position:', self.camera_x, self.camera_y)
@@ -461,6 +527,9 @@ class Level:
         return x_idx, y_idx
 
     def update_camera_and_render(self, screen: pygame.Surface, dx: float, dy: float, dt: float):
+        if not self._run:
+            raise StopIteration()
+
         self.camera_x += dx * dt
         self.camera_y += dy * dt
 
@@ -476,8 +545,6 @@ class Level:
                 self._render_front_buffer = pygame.Surface(screen.get_size())
                 print(f'Resized front buffer to size {self._render_front_buffer.get_size()}')
 
-            packets: list[net.Packet] = []
-
             mouse_pos = pygame.mouse.get_pos(False)
             mouse_press = pygame.mouse.get_pressed(3)
             mouse_click = pygame.mouse.get_just_pressed()
@@ -486,16 +553,93 @@ class Level:
             if t := self._level.get(t_pos):
                 if isinstance(t, Button):
                     # TODO: The button does not get updated if the mouse press is held down and then the mouse cursor is moved off
-                    packets.append(net.PacketButtonActivate(t_pos[0], t_pos[1], mouse_press[0], mouse_click[0]))
+                    self._new_packets.append(net.PacketButtonActivate(t_pos[0], t_pos[1], mouse_press[0], mouse_click[0]))
 
-            self._renderer_to_server_queue.extend(packets)
+            self._renderer_to_server_queue.extend(self._new_packets)
+            self._new_packets = []
 
         self._gui.update_and_render(screen, self)
 
     def get_tile_at_pos(self, x: int, y: int) -> Tile | None:
         return self._level.get((x, y))
 
+    def place_tile_at_pos(self, x: int, y: int, tile: Tile) -> None:
+        i = (x, y)
+        if i in self._level:
+            self._new_packets.append(net.PacketTileRemove(x, y))
+        self._new_packets.append(net.PacketTilePlace(x, y, tile))
+
     def stop(self):
         self._run = False
         print('Waiting for render_thread')
         self._render_thread.join()
+
+    def _wire_connections(self, wire: Wires, from_angle: int, set_logical_wire: TileWithActivation | None) -> set[int]:
+        stack = [from_angle]
+        found = set()
+        while stack:
+            from_angle = stack.pop(0)
+            if from_angle in found:
+                continue
+            found.add(from_angle)
+
+            if from_angle in wire.connections:
+                l = wire.connections[from_angle][1]
+                if l in self._logical_wires and l is not set_logical_wire:
+                    self._logical_wires.remove(l)
+
+                wire.connections[from_angle] = (wire.connections[from_angle][0], set_logical_wire)
+
+                stack.append(wire.connections[from_angle][0])
+            for to_angle in [i for i in wire.connections if wire.connections[i][0] == from_angle] + ([from_angle] if from_angle in wire.connections else []):
+                stack.append(to_angle)
+
+                if (a := wire.opposite_angle(to_angle)) in wire.connections and wire.connections[a][0] == wire.opposite_angle(wire.connections[to_angle][0]):
+                    stack.append(a)
+                if (a := wire.opposite_angle(wire.connections[to_angle][0])) in wire.connections and wire.connections[a][0] == wire.opposite_angle(to_angle):
+                    stack.append(a)
+
+        return found
+
+    def _update_wire_connections(self, x: int, y: int, to_angle: int):
+        logical_wire = LogicalWire([])
+
+        stack = [(x, y, to_angle)]
+        done = set()
+        while stack:
+            x, y, to_angle = stack.pop()
+            if (x, y, to_angle) in done:
+                continue
+            done.add((x, y, to_angle))
+
+            offset = WIRES_POSITIONS[to_angle // 3 * 3 + 1]
+            offset = (offset[0] // 2, offset[1] // 2)
+            x += offset[0]
+            y += offset[1]
+
+            from_angle = Wires.opposite_angle(to_angle)
+            tile = self._level.get((x, y))
+            if tile is None:
+                continue
+
+            if isinstance(tile, Wires):
+                for a in self._wire_connections(tile, from_angle, logical_wire):
+                    stack.append((x, y, a))
+
+            elif isinstance(tile, Button):
+                if from_angle % 3 == 1:
+                    logical_wire.inputs.append(tile)
+
+            elif isinstance(tile, Gate):
+                a = (from_angle - tile.rotation * 3) % 12
+                if a == 1:
+                    logical_wire.inputs.append(tile)
+                elif a == 6:
+                    tile._input_b = logical_wire
+                elif a == 8:
+                    tile._input_a = logical_wire
+
+            else:
+                raise NotImplementedError(f'_update_wire_connections: {tile.__class__.__name__}')
+
+            self._logical_wires.add(logical_wire)
