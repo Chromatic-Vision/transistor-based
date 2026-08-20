@@ -9,6 +9,7 @@ import typing
 
 import pygame
 
+import gui
 import net
 import render
 
@@ -340,6 +341,8 @@ class Wires(Tile):
                 pygame.draw.line(screen, c, (from_x, from_y), (from_x, to_y), wire_width)
                 pygame.draw.line(screen, c, (to_x, to_y), (from_x, to_y), wire_width)
                 pygame.draw.circle(screen, c, (from_x, to_y), wire_width)
+            else:
+                pygame.draw.line(screen, c, (from_x, from_y), (to_x, to_y), wire_width)
 
     def _serialise(self) -> bytes:
         return json.dumps(
@@ -374,6 +377,8 @@ class Level:
 
         self._render_thread = threading.Thread(target=self._render_loop, name='render_thread')
         self._render_thread.start()
+
+        self._gui = gui.Gui(screen_size)
 
     def _update(self, packets: list[net.Packet]):
         for packet in packets:
@@ -484,6 +489,11 @@ class Level:
                     packets.append(net.PacketButtonActivate(t_pos[0], t_pos[1], mouse_press[0], mouse_click[0]))
 
             self._renderer_to_server_queue.extend(packets)
+
+        self._gui.update_and_render(screen, self)
+
+    def get_tile_at_pos(self, x: int, y: int) -> Tile | None:
+        return self._level.get((x, y))
 
     def stop(self):
         self._run = False

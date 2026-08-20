@@ -22,6 +22,11 @@ try:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
+            elif event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    level.tile_size *= 1.1
+                elif event.y < 0:
+                    level.tile_size /= 1.1
         screen.fill((0, 0, 0))
 
         keys = pygame.key.get_pressed()
