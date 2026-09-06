@@ -1,3 +1,4 @@
+import abc
 import math
 import typing
 
@@ -7,14 +8,26 @@ if typing.TYPE_CHECKING:
     import world
 
 
-class Gui:
+events: list[pygame.event.Event] = []  # Written by main.py
+
+
+class Gui(abc.ABC):
+    @abc.abstractmethod
+    def __init__(self, screen_size: tuple[int, int]):
+        pass
+
+    @abc.abstractmethod
+    def update_and_render(self, screen: pygame.Surface, level: world.Level):
+        pass
+
+
+class GuiSimpleWirePlacer(Gui):
     def __init__(self, screen_size: tuple[int, int]):
         self._screen_size = screen_size
 
         self._mouse_held: tuple[int, int] | None = None
 
     def update_and_render(self, screen: pygame.Surface, level: world.Level):
-        # TODO: One class for placing wires and another for placing gates
         # TODO: Also different cursors
         # TODO: Right click to delete wires
         # TODO: Oscilloscope tool
@@ -162,3 +175,71 @@ class Gui:
                 ),
                 world.Wires.line_width_from_size(round(level.tile_size))
             )
+
+
+class GuiGatePlacer(Gui):
+    def __init__(self, screen_size: tuple[int, int]):
+        self._screen_size = screen_size
+
+        import world
+        self._gate_type: world.GateType | None = None
+
+        self._rotation = 0
+        self._gate_input = world.NullGate()
+        # TODO: Support placing buttons
+        self._render_gate = world.Gate(world.GateType.AND, self._gate_input, self._gate_input, self._rotation)
+
+    def _set_render_tile_activation(self, gate_activation: world.Activation):
+        self._gate_input._activated = gate_activation
+        self._render_gate.latch_input()
+        self._render_gate.latch_output()
+
+    def update_and_render(self, screen: pygame.Surface, level: world.Level):
+        import world
+
+        q_pressed = False
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    if event.mod & pygame.KMOD_SHIFT:
+                        self._rotation -= 1
+                    else:
+                        self._rotation += 1
+                elif event.key == pygame.K_q:
+                    q_pressed = True
+
+
+        def screen_to_tile_pos(x: int, y: int) -> tuple[int, int]:
+            x_idx = math.floor(level.camera_x + x / level.tile_size)
+            y_idx = math.floor(level.camera_y + y / level.tile_size)
+            return x_idx, y_idx
+
+
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_click = pygame.mouse.get_just_pressed()
+
+        gate_pos = screen_to_tile_pos(*mouse_pos)
+
+        if q_pressed:
+            t = level.get_tile_at_pos(*gate_pos)
+            if t is not None and isinstance(t, world.Gate):
+                self._render_gate._gate_type = t._gate_type
+                self._rotation = t.rotation
+
+        self._set_render_tile_activation(world.Activation.FLOATING)
+
+        self._render_gate.rotation = self._rotation
+        self._render_gate.render(
+            screen,
+            round((gate_pos[0] - level.camera_x) * level.tile_size),
+            round((gate_pos[1] - level.camera_y) * level.tile_size),
+            math.ceil(level.tile_size)
+        )
+
+        if mouse_click[0]:
+            level.place_tile_at_pos(
+                gate_pos[0], gate_pos[1],
+                self._render_gate  # level makes a copy
+            )
+        elif mouse_click[2]:
+            level.place_tile_at_pos(gate_pos[0], gate_pos[1], None)

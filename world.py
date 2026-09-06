@@ -69,7 +69,7 @@ class Tile(abc.ABC):
     def deserialise(cls, data: bytes) -> Tile:
         class_name, _, data = data.partition(b' ')
         class_name = class_name.decode('utf-8')
-        assert class_name in Tile._subclasses()
+        assert class_name in (c.__name__ for c in Tile._subclasses()), Tile._subclasses()
 
         return globals()[class_name]._deserialise(data)
 
@@ -118,6 +118,8 @@ class GateType(enum.StrEnum):
     XOR = enum.auto()
 
 
+# Pygame raises an error if a surface is used on multiple threads at the same time.
+_gate_cache_lock = threading.Lock()
 _gate_cache: dict[tuple[GateType, int, tuple[int, int, int]], pygame.Surface] = {}
 
 
@@ -133,17 +135,18 @@ class Gate(TileWithActivation):
         self._new_activation: Activation = Activation.FLOATING
 
     def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
-        k = (self._gate_type, size_, self._activation.color)
-        if k not in _gate_cache:
-            s = pygame.Surface((size_, size_))
-            s.set_colorkey((0, 0, 0))
-            render.render(s, str(self._gate_type).upper(), self._activation.color, (0, 0), size_, self.line_width_from_size(size_))
-            _gate_cache[k] = s
-        s = _gate_cache[k]
+        with _gate_cache_lock:
+            k = (self._gate_type, size_, self._activation.color)
+            if k not in _gate_cache:
+                s = pygame.Surface((size_, size_))
+                s.set_colorkey((0, 0, 0))
+                render.render(s, str(self._gate_type).upper(), self._activation.color, (0, 0), size_, self.line_width_from_size(size_))
+                _gate_cache[k] = s
+            s = _gate_cache[k]
 
-        if self.rotation != 1:
-            s = pygame.transform.rotate(s, (-self.rotation + 1) * 90)
-        screen.blit(s, (x, y))
+            if self.rotation != 1:
+                s = pygame.transform.rotate(s, (-self.rotation + 1) * 90)
+            screen.blit(s, (x, y))
 
     def get_activated(self) -> Activation:
         return self._activation
@@ -156,6 +159,7 @@ class Gate(TileWithActivation):
             return
         if a == Activation.FLOATING or b == Activation.FLOATING:
             self._new_activation = Activation.FLOATING
+            return
 
         a: bool = a.activated
         b: bool = b.activated
@@ -188,11 +192,11 @@ class Gate(TileWithActivation):
 
     @classmethod
     def _deserialise(cls, data: bytes) -> typing.Self:
-        data = json.loads(json.loads(data.decode('utf-8')))
-        tile = cls(GateType(data['gate_type']), NullGate(Activation.COMPETING), NullGate(Activation.COMPETING), data['rotation'])
+        data = json.loads(data.decode('utf-8'))
+        tile = cls(GateType(data['gate_type']), NullGate(Activation.FLOATING), NullGate(Activation.FLOATING), data['rotation'])
         tile._activation = Activation.__members__[data['activation']]
         tile._new_activation = Activation.__members__[data['new_activation']]
-
+        return tile
 
 
 class NullGate(TileWithActivation):
@@ -404,7 +408,7 @@ class Level:
         self._render_thread = threading.Thread(target=self._render_loop, name='render_thread')
         self._render_thread.start()
 
-        self._gui = gui.Gui(screen_size)
+        self._gui = gui.GuiGatePlacer(screen_size)
 
     def _update(self, packets: list[net.Packet]):
         for packet in packets:
@@ -430,6 +434,13 @@ class Level:
                         offset = WIRES_POSITIONS[c // 3 * 3 + 1]
                         offset = (offset[0] // 2, offset[1] // 2)
                         self._update_wire_connections(packet.x + offset[0], packet.y + offset[1], Wires.opposite_angle(c))
+
+                elif isinstance(tile, Gate):
+                    for i in [1, 7, 9]:
+                        i += tile.rotation * 3
+                        i %= 12
+                        self._update_wire_connections(packet.x, packet.y, i)
+
                 else:
                     raise NotImplementedError(f'Updating connections of tile type {self._level[i].__class__.__name__}')
 
@@ -442,6 +453,13 @@ class Level:
                     for angle in tile.connections:
                         connections.add(angle)
                         connections.add(tile.connections[angle][0])
+
+                elif isinstance(tile, Gate):
+                    for r in [1, 7, 9]:
+                        r += tile.rotation * 3
+                        r %= 12
+                        connections.add(r)
+
                 else:
                     raise NotImplementedError(f'Removing connections of tile type {tile.__class__.__name__}')
 
@@ -555,19 +573,22 @@ class Level:
                     # TODO: The button does not get updated if the mouse press is held down and then the mouse cursor is moved off
                     self._new_packets.append(net.PacketButtonActivate(t_pos[0], t_pos[1], mouse_press[0], mouse_click[0]))
 
+            self._gui.update_and_render(screen, self)
+
             self._renderer_to_server_queue.extend(self._new_packets)
             self._new_packets = []
-
-        self._gui.update_and_render(screen, self)
 
     def get_tile_at_pos(self, x: int, y: int) -> Tile | None:
         return self._level.get((x, y))
 
-    def place_tile_at_pos(self, x: int, y: int, tile: Tile) -> None:
+    def place_tile_at_pos(self, x: int, y: int, tile: Tile | None) -> None:
         i = (x, y)
         if i in self._level:
             self._new_packets.append(net.PacketTileRemove(x, y))
-        self._new_packets.append(net.PacketTilePlace(x, y, tile))
+        if tile is not None:
+            # Make a copy because in offline mode the gate is passed directly to the update thread
+            s = tile.serialise()
+            self._new_packets.append(net.PacketTilePlace(x, y, Gate.deserialise(s)))
 
     def stop(self):
         self._run = False

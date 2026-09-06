@@ -1,8 +1,7 @@
-import threading
-
 import pygame
 
 import world
+import gui
 
 pygame.init()
 
@@ -19,7 +18,8 @@ try:
     while run:
         clock.tick(60)
         dt = clock.get_time() / 1_000
-        for event in pygame.event.get():
+        gui.events = pygame.event.get()
+        for event in gui.events:
             if event.type == pygame.QUIT:
                 run = False
             elif event.type == pygame.MOUSEWHEEL:
