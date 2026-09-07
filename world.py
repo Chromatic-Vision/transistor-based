@@ -510,16 +510,6 @@ class Level:
 
     def _render_loop(self):
         try:
-            b = Button(True)
-            self._level[(-1, 0)] = b
-
-            g = Gate(GateType.OR, b, NullGate(), 2)
-            self._level[(0, 0)] = g
-
-            for i in range(4):
-                g = Gate(GateType.XNOR, NullGate(), NullGate(), 0)
-                self._level[(i * 2, 6)] = g
-
             clock = pygame.time.Clock()
             while self._run:
                 clock.tick(20)  # 20

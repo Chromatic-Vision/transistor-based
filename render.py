@@ -1,6 +1,18 @@
 from __future__ import annotations
 
+import math
+
 import pygame
+
+try:
+    import pygame.gfxdraw
+
+    def _draw_filled_polygon(screen: pygame.Surface, color, points: list[tuple[int, int]]):
+        pygame.gfxdraw.aapolygon(screen, points, color)
+        pygame.gfxdraw.filled_polygon(screen, points, color)
+except ImportError:
+    def _draw_filled_polygon(screen: pygame.Surface, color, points: list[tuple[int, int]]):
+        pygame.draw.polygon(screen, color, points)
 
 
 def _parse_expression(expr: str) -> float:
@@ -56,6 +68,25 @@ def render_path(screen: pygame.Surface, path: str, color, pos, scale: float, str
     def screen_pos(p: tuple[float, float]) -> tuple[float, float]:
         return round(pos[0] + p[0] * scale), round(pos[1] + p[1] * scale)
 
+    def render_capped_line(color, from_, to, width):
+        if width <= 2:
+            pygame.draw.aaline(screen, color, from_, to, width)
+            return
+
+        pygame.draw.circle(screen, color, from_, width // 2 - 1)
+        pygame.draw.circle(screen, color, to, width // 2 - 1)
+
+        angle = math.atan2(from_[0] - to[0], from_[1] - to[1])
+        dx = math.cos(angle) * stroke_width / 2
+        dy = -math.sin(angle) * stroke_width / 2
+
+        _draw_filled_polygon(screen, color, [
+            (from_[0] - dx, from_[1] - dy),
+            (from_[0] + dx, from_[1] + dy),
+            (to[0] + dx, to[1] + dy),
+            (to[0] - dx, to[1] - dy),
+        ])
+
     x = 0
     y = 0
     ox, oy = x, y
@@ -65,7 +96,7 @@ def render_path(screen: pygame.Surface, path: str, color, pos, scale: float, str
         if not l:
             continue
         if l == 'R':
-            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((ox, oy)), stroke_width)
+            render_capped_line(color, screen_pos((x, y)), screen_pos((ox, oy)), stroke_width)
             x, y = ox, oy
             continue
 
@@ -78,11 +109,11 @@ def render_path(screen: pygame.Surface, path: str, color, pos, scale: float, str
             y = cy
             ox, oy = x, y
         elif command == 'L':
-            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((cx, cy)), stroke_width)
+            render_capped_line(color, screen_pos((x, y)), screen_pos((cx, cy)), stroke_width)
             x = cx
             y = cy
         elif command == 'l':
-            pygame.draw.line(screen, color, screen_pos((x, y)), screen_pos((x + cx, y + cy)), stroke_width)
+            render_capped_line(color, screen_pos((x, y)), screen_pos((x + cx, y + cy)), stroke_width)
             x += cx
             y += cy
 
@@ -104,7 +135,9 @@ if __name__ == '__main__':
     assert abs(_parse_expression('1/2-1/12') - (1 / 2 - 1 / 12)) < 0.01
 
     pygame.init()
-    # screen = pygame.display.set_mode((800, 800))
+    screen = pygame.display.set_mode((800, 800))
+
+    render(screen, 'NAND', (255, 255, 255), (0, 0), screen.get_width(), stroke_width=round(screen.get_width() / 13))
 
     # render_path(screen, '''
     # M 0 1/3
@@ -142,10 +175,11 @@ if __name__ == '__main__':
     # R
     # ''', (255, 100, 100), (50, 50), 100)
 
-    # clock = pygame.time.Clock()
-    # while not pygame.event.get(pygame.QUIT):
-    #     clock.tick(60)
-    #     pygame.display.update()
+    clock = pygame.time.Clock()
+    while not pygame.event.get(pygame.QUIT):
+        clock.tick(60)
+        pygame.display.update()
+    exit(0)
 
     import sys, os
     if len(sys.argv) != 5:
