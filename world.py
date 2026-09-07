@@ -281,8 +281,11 @@ class Button(TileWithActivation):
         self._latching = latching
         self._state = False
 
-    def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
-        c = Activation.from_bool(self._state).color
+    def render(self, screen: pygame.Surface, x: int, y: int, size_: int, c: Activation | None = None) -> None:
+        if c is None:
+            c = Activation.from_bool(self._state).color
+        else:
+            c = c.color
         pygame.draw.circle(screen, c, (x + size_ / 2, y + size_ / 2), size_ / 2, self.line_width_from_size(size_))
         if self._latching:
             pygame.draw.circle(screen, c, (x + size_ / 2, y + size_ / 2), self.line_width_from_size(size_))
@@ -447,6 +450,11 @@ class Level:
                         i %= 12
                         self._update_wire_connections(packet.x, packet.y, i)
 
+                elif isinstance(tile, Button):
+                    for i in range(4):
+                        i = i * 3 + 1
+                        self._update_wire_connections(packet.x, packet.y, i)
+
                 else:
                     raise NotImplementedError(f'Updating connections of tile type {self._level[i].__class__.__name__}')
 
@@ -464,6 +472,11 @@ class Level:
                     for r in [1, 7, 9]:
                         r += tile.rotation * 3
                         r %= 12
+                        connections.add(r)
+
+                elif isinstance(tile, Button):
+                    for r in range(4):
+                        r = r * 3 + 1
                         connections.add(r)
 
                 else:
