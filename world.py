@@ -408,7 +408,13 @@ class Level:
         self._render_thread = threading.Thread(target=self._render_loop, name='render_thread')
         self._render_thread.start()
 
-        self._gui = gui.GuiPan(screen_size)
+        self._gui_pan = gui.GuiPan(screen_size)
+
+        self._gui_wire = gui.GuiSimpleWirePlacer(screen_size)
+        self._gui_wire.gui_pan = self._gui_pan
+
+        self._gui = gui.GuiGatePlacer(screen_size)
+        self._gui.gui_wire = self._gui_wire
 
     def _update(self, packets: list[net.Packet]):
         for packet in packets:

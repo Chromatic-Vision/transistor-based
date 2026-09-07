@@ -17,6 +17,7 @@ class CursorType(enum.Enum):
     GRABBING = (b'grabbing', pygame.SYSTEM_CURSOR_HAND)
 
     CROSSHAIR = (b'crosshair', pygame.SYSTEM_CURSOR_CROSSHAIR)
+    CELL = (b'cell', pygame.SYSTEM_CURSOR_ARROW)
 
 
 _cursor_use_x11 = False

@@ -71,8 +71,9 @@ class GuiSimpleWirePlacer(Gui):
 
         self._mouse_held: tuple[int, int] | None = None
 
+        self.gui_pan: GuiPan | None = None
+
     def update_and_render(self, screen: pygame.Surface, level: world.Level):
-        # TODO: Right click to delete wires
         # TODO: Oscilloscope tool
         # TODO: If holding shift over a tile which the oscilloscope can be used on, change cursor to question mark
 
@@ -93,24 +94,7 @@ class GuiSimpleWirePlacer(Gui):
         mouse_pos = pygame.mouse.get_pos()
         mouse_press = pygame.mouse.get_pressed(3)
         focused = pygame.mouse.get_focused()
-
-        if focused:
-            grid_color = (60, 0, 0)
-            mouse_tile_pos = screen_to_tile_pos(*mouse_pos)
-            for x in range(-1, 2):
-                for y in range(-1, 2):
-                    draw_x = round((mouse_tile_pos[0] + x - level.camera_x) * level.tile_size)
-                    draw_y = round((mouse_tile_pos[1] + y - level.camera_y) * level.tile_size)
-                    pygame.draw.line(screen, grid_color,
-                                     (draw_x, draw_y),
-                                     (draw_x + level.tile_size, draw_y),
-                                     world.Tile.line_width_from_size(round(level.tile_size))
-                                     )
-                    pygame.draw.line(screen, grid_color,
-                                     (draw_x, draw_y),
-                                     (draw_x, draw_y + level.tile_size),
-                                     world.Tile.line_width_from_size(round(level.tile_size))
-                                     )
+        mods = pygame.key.get_mods()
 
         if not mouse_press[0]:
             self._mouse_held = None
@@ -129,6 +113,30 @@ class GuiSimpleWirePlacer(Gui):
         empty = (tile := level.get_tile_at_pos(mouse_wire_pos_x // 6, mouse_wire_pos_y // 6)) is None or isinstance(tile, world.Wires)
         if mouse_wire_pos_x % 6 == 0 or mouse_wire_pos_y % 6 == 0:
             empty = True
+        if (
+                not self._has_connection(mouse_wire_pos_x, mouse_wire_pos_y, level)
+                and not mods & pygame.KMOD_CTRL
+                and self._mouse_held is None
+        ):
+            empty = False
+
+        if focused and empty:
+            grid_color = (60, 0, 0)
+            mouse_tile_pos = screen_to_tile_pos(*mouse_pos)
+            for x in range(-1, 2):
+                for y in range(-1, 2):
+                    draw_x = round((mouse_tile_pos[0] + x - level.camera_x) * level.tile_size)
+                    draw_y = round((mouse_tile_pos[1] + y - level.camera_y) * level.tile_size)
+                    pygame.draw.line(screen, grid_color,
+                                     (draw_x, draw_y),
+                                     (draw_x + level.tile_size, draw_y),
+                                     world.Tile.line_width_from_size(round(level.tile_size))
+                                     )
+                    pygame.draw.line(screen, grid_color,
+                                     (draw_x, draw_y),
+                                     (draw_x, draw_y + level.tile_size),
+                                     world.Tile.line_width_from_size(round(level.tile_size))
+                                     )
 
         if (
                 not (mouse_wire_pos_x % 6 == 0 and mouse_wire_pos_y % 6 == 0)
@@ -139,19 +147,6 @@ class GuiSimpleWirePlacer(Gui):
                 self._mouse_held = (mouse_wire_pos_x, mouse_wire_pos_y)
 
             if self._mouse_held is not None and (mouse_wire_pos_x % 6 == 0 or mouse_wire_pos_y % 6 == 0):
-                def pos_to_angle(pos: tuple[int, int]) -> int:
-                    pos_to_offset = {
-                        0: -2,
-                        2: -1,
-                        3: 0,
-                        4: 1,
-                        6: 2
-                    }
-                    return world.WIRES_POSITIONS.index((
-                        pos_to_offset[pos[0]],
-                        pos_to_offset[pos[1]]
-                    ))
-
                 def mod_coords(from_: tuple[int, int], to: tuple[int, int]) -> tuple[tuple[int, int], tuple[int, int]]:
                     aa = []
                     ba = []
@@ -170,9 +165,9 @@ class GuiSimpleWirePlacer(Gui):
                     (self._mouse_held[0], self._mouse_held[1]),
                     (mouse_wire_pos_x, mouse_wire_pos_y)
                 )
-                to_angle = pos_to_angle(to)
+                to_angle = self._pos_to_angle(to)
                 try:
-                    from_angle = pos_to_angle(from_)
+                    from_angle = self._pos_to_angle(from_)
                 except ValueError:
                     from_angle = world.Wires.opposite_angle(to_angle)
 
@@ -219,6 +214,72 @@ class GuiSimpleWirePlacer(Gui):
                 ),
                 world.Wires.line_width_from_size(round(level.tile_size))
             )
+            cursors.set_cursor(cursors.CursorType.CROSSHAIR)
+        else:
+            if self.gui_pan is not None:
+                self.gui_pan.update_and_render(screen, level)
+
+    @staticmethod
+    def _pos_to_angle(pos: tuple[int, int]) -> int:
+        import world
+
+        pos_to_offset = {
+            0: -2,
+            2: -1,
+            3: 0,
+            4: 1,
+            6: 2
+        }
+        return world.WIRES_POSITIONS.index((
+            pos_to_offset[pos[0]],
+            pos_to_offset[pos[1]]
+        ))
+
+    def _has_connection(self, mouse_wire_pos_x: int, mouse_wire_pos_y: int, level: world.Level) -> bool:
+        dx = 0
+        dy = 0
+        if mouse_wire_pos_x % 6 == 0:
+            dx = 1
+        if mouse_wire_pos_y % 6 == 0:
+            dy = 1
+
+        if dx == dy:  # Skip corners
+            return False
+
+        tile_pos_x = mouse_wire_pos_x // 6
+        tile_pos_y = mouse_wire_pos_y // 6
+
+        import world
+        for i, (x, y) in enumerate(((tile_pos_x, tile_pos_y), (tile_pos_x - dx, tile_pos_y - dy))):
+            direction = self._pos_to_angle((mouse_wire_pos_x % 6, mouse_wire_pos_y % 6))
+            if i == 1:
+                direction = world.Wires.opposite_angle(direction)
+
+            t = level.get_tile_at_pos(x, y)
+            if t is None:
+                pass
+
+            elif isinstance(t, world.Gate):
+                for di in (1, 2 * 3, 2 * 3 + 2):
+                    if direction == (t.rotation * 3 + di) % 12:
+                        return True
+
+            elif isinstance(t, world.Button):
+                for di in range(4):
+                    if direction == (di * 3 + 1) % 12:
+                        return True
+
+            elif isinstance(t, world.Wires):
+                if direction in t.connections.keys():
+                    return True
+                for to, _ in t.connections.values():
+                    if to == direction:
+                        return True
+
+            else:
+                raise NotImplementedError(t.__class__.__name__)
+
+        return False
 
 
 class GuiGatePlacer(Gui):
@@ -226,11 +287,15 @@ class GuiGatePlacer(Gui):
         self._screen_size = screen_size
 
         import world
-        self._gate_type: world.GateType | None = None
+
+        self.gui_wire: GuiSimpleWirePlacer | None = None
+
+        self._last_removed: tuple[int, int] | None = None
 
         self._rotation = 0
         self._gate_input = world.NullGate()
         # TODO: Support placing buttons
+        self._gate_selected = False
         self._render_gate = world.Gate(world.GateType.AND, self._gate_input, self._gate_input, self._rotation)
 
     def _set_render_tile_activation(self, gate_activation: world.Activation):
@@ -261,14 +326,32 @@ class GuiGatePlacer(Gui):
 
         mouse_pos = pygame.mouse.get_pos()
         mouse_click = pygame.mouse.get_just_pressed()
+        mouse_press = pygame.mouse.get_pressed()
 
         gate_pos = screen_to_tile_pos(*mouse_pos)
 
         if q_pressed:
             t = level.get_tile_at_pos(*gate_pos)
-            if t is not None and isinstance(t, world.Gate):
+            if t is None:
+                self._gate_selected = False
+            elif isinstance(t, world.Gate):
                 self._render_gate._gate_type = t._gate_type
                 self._rotation = t.rotation
+                self._gate_selected = True
+
+        if mouse_press[2]:
+            cursors.set_cursor(cursors.CursorType.CELL)
+            if gate_pos != self._last_removed:
+                level.place_tile_at_pos(gate_pos[0], gate_pos[1], None)
+                self._last_removed = gate_pos
+            return
+        else:
+            self._last_removed = None
+
+        if not self._gate_selected:
+            if self.gui_wire is not None:
+                self.gui_wire.update_and_render(screen, level)
+            return
 
         self._set_render_tile_activation(world.Activation.FLOATING)
 
@@ -285,5 +368,3 @@ class GuiGatePlacer(Gui):
                 gate_pos[0], gate_pos[1],
                 self._render_gate  # level makes a copy
             )
-        elif mouse_click[2]:
-            level.place_tile_at_pos(gate_pos[0], gate_pos[1], None)
