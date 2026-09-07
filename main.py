@@ -1,11 +1,32 @@
+import os
+
 import pygame
 
 import world
 import gui
+import cursors
+
+set_videodriver = False
+if 'SDL_VIDEODRIVER' not in os.environ:
+    os.environ['SDL_VIDEODRIVER'] = 'x11'
+    set_videodriver = True
 
 pygame.init()
+try:
+    pygame.display.init()
+except pygame.error:
+    if set_videodriver:
+        print('Not able to use x11')
+        os.environ.pop('SDL_VIDEODRIVER')
+        pygame.display.init()
+    else:
+        raise
+
+print('Using video driver:', pygame.display.get_driver())
 
 screen = pygame.display.set_mode((0, 0), pygame.RESIZABLE)
+
+cursors.init()
 
 CAMERA_SPEED = 20  # blocks/s
 tick_rate = 20
