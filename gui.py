@@ -51,6 +51,7 @@ class GuiPan(Gui):
                     cursors.set_cursor(cursors.CursorType.GRAB)
 
             elif isinstance(t, world.Button):
+                # TODO: Interact with the button here instead of in Level
                 cursors.set_cursor(cursors.CursorType.HAND)
 
             else:
@@ -282,6 +283,20 @@ class GuiSimpleWirePlacer(Gui):
         return False
 
 
+_NUMBER_KEYS = [
+    pygame.K_0,
+    pygame.K_1,
+    pygame.K_2,
+    pygame.K_3,
+    pygame.K_4,
+    pygame.K_5,
+    pygame.K_6,
+    pygame.K_7,
+    pygame.K_8,
+    pygame.K_9,
+]
+
+
 class GuiGatePlacer(Gui):
     def __init__(self, screen_size: tuple[int, int]):
         self._screen_size = screen_size
@@ -317,6 +332,14 @@ class GuiGatePlacer(Gui):
                 elif event.key == pygame.K_q:
                     q_pressed = True
 
+                elif event.key in _NUMBER_KEYS:
+                    i = _NUMBER_KEYS.index(event.key) - 1
+                    if i < 0:
+                        continue
+                    gate_types = list(iter(world.GateType))
+                    if i < len(gate_types):
+                        self._gate_selected = True
+                        self._render_gate._gate_type = gate_types[i]
 
         def screen_to_tile_pos(x: int, y: int) -> tuple[int, int]:
             x_idx = math.floor(level.camera_x + x / level.tile_size)
@@ -352,6 +375,8 @@ class GuiGatePlacer(Gui):
             if self.gui_wire is not None:
                 self.gui_wire.update_and_render(screen, level)
             return
+
+        cursors.set_cursor()
 
         self._set_render_tile_activation(world.Activation.FLOATING)
 
