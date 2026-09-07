@@ -51,8 +51,9 @@ class GuiPan(Gui):
                     cursors.set_cursor(cursors.CursorType.GRAB)
 
             elif isinstance(t, world.Button):
-                # TODO: Interact with the button here instead of in Level
                 cursors.set_cursor(cursors.CursorType.HAND)
+
+                level.activate_button_at_pos(*gate_pos, mouse_press[0], mouse_click[0])
 
             else:
                 cursors.set_cursor()

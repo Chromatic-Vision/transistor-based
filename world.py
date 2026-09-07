@@ -575,22 +575,10 @@ class Level:
                 (self._last_camera_pos[0] - self.camera_x) * self.tile_size,
                 (self._last_camera_pos[1] - self.camera_y) * self.tile_size
             ))
-            # screen.blit(self._render_front_buffer,
-            #             (self.camera_x - self._last_camera_pos[0], self.camera_y - self._last_camera_pos[1]))
 
             if screen.get_size() != self._render_front_buffer.get_size():
                 self._render_front_buffer = pygame.Surface(screen.get_size())
                 print(f'Resized front buffer to size {self._render_front_buffer.get_size()}')
-
-            mouse_pos = pygame.mouse.get_pos(False)
-            mouse_press = pygame.mouse.get_pressed(3)
-            mouse_click = pygame.mouse.get_just_pressed()
-
-            t_pos = self._screen_to_tile_pos(mouse_pos[0], mouse_pos[1])
-            if t := self._level.get(t_pos):
-                if isinstance(t, Button):
-                    # TODO: The button does not get updated if the mouse press is held down and then the mouse cursor is moved off
-                    self._new_packets.append(net.PacketButtonActivate(t_pos[0], t_pos[1], mouse_press[0], mouse_click[0]))
 
             self._gui.update_and_render(screen, self)
 
@@ -608,6 +596,9 @@ class Level:
             # Make a copy because in offline mode the gate is passed directly to the update thread
             s = tile.serialise()
             self._new_packets.append(net.PacketTilePlace(x, y, Gate.deserialise(s)))
+
+    def activate_button_at_pos(self, x: int, y: int, mouse_press: bool, mouse_click: bool):
+        self._new_packets.append(net.PacketButtonActivate(x, y, mouse_press, mouse_click))
 
     def stop(self):
         self._run = False
