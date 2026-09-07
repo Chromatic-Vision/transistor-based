@@ -381,8 +381,8 @@ class Wires(Tile):
     @classmethod
     def _deserialise(cls, data: bytes) -> typing.Self:
         data = json.loads(data.decode('utf-8'))
-        tile =  cls()
-        tile.connections = {from_: (to, NullGate(Activation.COMPETING)) for from_, to in data}
+        tile = cls()
+        tile.connections = {int(from_): (to, NullGate(Activation.COMPETING)) for from_, to in data.items()}
         return tile
 
 
@@ -408,7 +408,7 @@ class Level:
         self._render_thread = threading.Thread(target=self._render_loop, name='render_thread')
         self._render_thread.start()
 
-        self._gui = gui.GuiGatePlacer(screen_size)
+        self._gui = gui.GuiPan(screen_size)
 
     def _update(self, packets: list[net.Packet]):
         for packet in packets:

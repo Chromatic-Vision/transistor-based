@@ -4,6 +4,7 @@ import typing
 
 import pygame
 
+import cursors
 if typing.TYPE_CHECKING:
     import world
 
@@ -21,6 +22,49 @@ class Gui(abc.ABC):
         pass
 
 
+class GuiPan(Gui):
+    def __init__(self, screen_size: tuple[int, int]):
+        self._drag_start: tuple[tuple[int, int], tuple[int, int]] | None = None
+
+    def update_and_render(self, screen: pygame.Surface, level: world.Level):
+        def screen_to_tile_pos(x: int, y: int) -> tuple[int, int]:
+            x_idx = math.floor(level.camera_x + x / level.tile_size)
+            y_idx = math.floor(level.camera_y + y / level.tile_size)
+            return x_idx, y_idx
+
+
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_click = pygame.mouse.get_just_pressed()
+        mouse_press = pygame.mouse.get_pressed()
+
+        import world
+
+        gate_pos = screen_to_tile_pos(*mouse_pos)
+        t = level.get_tile_at_pos(*gate_pos)
+        if self._drag_start is None:
+            if t is None:
+                if mouse_click[0]:
+                    self._drag_start = (mouse_pos, (level.camera_x, level.camera_y))
+                if mouse_press[0]:
+                    cursors.set_cursor()
+                else:
+                    cursors.set_cursor(cursors.CursorType.GRAB)
+
+            elif isinstance(t, world.Button):
+                cursors.set_cursor(cursors.CursorType.HAND)
+
+            else:
+                cursors.set_cursor()
+        else:
+            cursors.set_cursor(cursors.CursorType.GRABBING)
+
+            level.camera_x = self._drag_start[1][0] + (self._drag_start[0][0] - mouse_pos[0]) / level.tile_size
+            level.camera_y = self._drag_start[1][1] + (self._drag_start[0][1] - mouse_pos[1]) / level.tile_size
+
+            if not mouse_press[0]:
+                self._drag_start = None
+
+
 class GuiSimpleWirePlacer(Gui):
     def __init__(self, screen_size: tuple[int, int]):
         self._screen_size = screen_size
@@ -28,9 +72,9 @@ class GuiSimpleWirePlacer(Gui):
         self._mouse_held: tuple[int, int] | None = None
 
     def update_and_render(self, screen: pygame.Surface, level: world.Level):
-        # TODO: Also different cursors
         # TODO: Right click to delete wires
         # TODO: Oscilloscope tool
+        # TODO: If holding shift over a tile which the oscilloscope can be used on, change cursor to question mark
 
         def screen_to_tile_pos(x: int, y: int) -> tuple[int, int]:
             x_idx = math.floor(level.camera_x + x / level.tile_size)

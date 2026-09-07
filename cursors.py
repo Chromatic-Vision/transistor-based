@@ -7,6 +7,7 @@ import pygame
 
 class CursorType(enum.Enum):
     # https://www.w3schools.com/cssref/tryit.php?filename=trycss_cursor
+    # ls -l /usr/share/icons/Adwaita/cursors/
 
     ARROW = (b'arrow', pygame.SYSTEM_CURSOR_ARROW)
     WAIT = (b'wait', pygame.SYSTEM_CURSOR_WAIT)
