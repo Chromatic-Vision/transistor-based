@@ -112,10 +112,10 @@ class TileWithActivation(Tile, abc.ABC):
 class GateType(enum.StrEnum):
     AND = enum.auto()
     NAND = enum.auto()
-    NOR = enum.auto()
     OR = enum.auto()
-    XNOR = enum.auto()
+    NOR = enum.auto()
     XOR = enum.auto()
+    XNOR = enum.auto()
 
 
 # Pygame raises an error if a surface is used on multiple threads at the same time.
@@ -390,7 +390,7 @@ class Wires(Tile):
 
 
 class Level:
-    def __init__(self, screen_size: tuple[int, int]):
+    def __init__(self, screen_size: tuple[int, int], update_callback: typing.Callable[[list[net.Packet]], list[net.Packet]] | None = None, client: net.NetClient | None = None):
         self._level: dict[tuple[int, int], Tile] = {}
         self._logical_wires: MutSet[LogicalWire] = MutSet()
         self._gates: list[Gate] = []
@@ -401,6 +401,9 @@ class Level:
         self._last_camera_pos = (self.camera_x, self.camera_y)
         self._renderer_to_server_queue: list[net.Packet] = []
         self._new_packets: list[net.Packet] = []
+
+        self._update_callback = update_callback
+        self._client = client
 
         self._render_back_buffer = pygame.Surface(screen_size)
         self._render_front_buffer = pygame.Surface(screen_size)
@@ -509,12 +512,18 @@ class Level:
             logical_wire.latch_output()
 
     def _render_loop(self):
+        packets = []
         try:
             clock = pygame.time.Clock()
             while self._run:
                 clock.tick(20)  # 20
 
-                packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
+                if self._update_callback is None:
+                    packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
+                else:
+                    packets = self._update_callback(packets)
+                    if type(packets) is str:
+                        raise ValueError(packets)
                 self._update(packets)
 
                 s: pygame.Surface = self._render_back_buffer
@@ -572,7 +581,13 @@ class Level:
 
             self._gui.update_and_render(screen, self)
 
-            self._renderer_to_server_queue.extend(self._new_packets)
+            if self._client is None:
+                self._renderer_to_server_queue.extend(self._new_packets)
+            else:
+                p = self._client.update(self._new_packets)
+                if type(p) is str:
+                    raise ValueError(p)
+                self._renderer_to_server_queue.extend(p)
             self._new_packets = []
 
     def get_tile_at_pos(self, x: int, y: int) -> Tile | None:

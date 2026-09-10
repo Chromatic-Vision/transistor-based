@@ -1,10 +1,14 @@
 import os
+import socket
 
 import pygame
 
 import world
 import gui
 import cursors
+import net
+
+address = ('localhost', 60_001)
 
 set_videodriver = False
 if 'SDL_VIDEODRIVER' not in os.environ:
@@ -31,7 +35,14 @@ cursors.init()
 CAMERA_SPEED = 20  # blocks/s
 tick_rate = 20
 
-level = world.Level(screen.get_size())
+if address is not None:
+    s = socket.socket()
+    s.connect(address)
+    s.settimeout(0)
+    client = net.NetClient(s)
+else:
+    client = None
+level = world.Level(screen.get_size(), client=client)
 
 clock = pygame.time.Clock()
 run = True
