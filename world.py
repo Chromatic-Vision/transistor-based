@@ -576,15 +576,9 @@ class Level:
                 x = x_idx * self.tile_size - camera_x % 1.0 * self.tile_size
                 x_pos = x_idx + math.floor(camera_x)
 
-                # if self._level[()]
-                if x_pos == -1 and y_pos == -1:
-                    # pygame.draw.rect(screen, (255, 255, 255), (x, y, self.tile_size, self.tile_size))
-                    pass
-                elif (x_pos, y_pos) in self._level:
+                if (x_pos, y_pos) in self._level:
                     t = self._level[(x_pos, y_pos)]
                     t.render(screen, round(x), round(y), math.ceil(self.tile_size))
-
-        # raise NotImplementedError('Level._render')
 
     def _screen_to_tile_pos(self, x: int, y: int) -> tuple[int, int]:
         x_idx = math.floor(self.camera_x + x / self.tile_size)
