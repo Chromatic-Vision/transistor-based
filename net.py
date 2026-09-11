@@ -112,12 +112,24 @@ class PacketTileRemove(Packet):
         return cls(data['x'], data['y'])
 
 
+class PacketLevelDownload(Packet):
+    def __init__(self, level_data: bytes):
+        self.level_data = level_data
+
+    def _serialise(self) -> bytes:
+        return self.level_data
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        return cls(data)
+
+
 _CLIENT_HELLO = b'TransistorBasedClient'  # VERSION: u16 u16 u16
 _SERVER_HELLO = b'TransistorBasedServer'
 
 
 VERSION = (0, 0, 1)
-_version = b''.join(v.to_bytes(2, 'big') for v in VERSION)
+version = b''.join(v.to_bytes(2, 'big') for v in VERSION)
 
 
 class NetServer:
@@ -128,12 +140,14 @@ class NetServer:
 
         self._clients: list[NetServerClient] = []
 
-    def update(self, new_packets: list[Packet]) -> list[Packet]:
+    def update(self, level: world.Level, new_packets: list[Packet]) -> list[Packet]:
         try:
             client_socket, client_address = self._server_socket.accept()
             client_socket.settimeout(0)
             print(f'Client connected from address: {client_address!r}')
-            self._clients.append(NetServerClient(client_socket))
+            level_data = io.BytesIO()
+            level.serialise(level_data)
+            self._clients.append(NetServerClient(client_socket, [PacketLevelDownload(level_data.getvalue())]))
         except BlockingIOError:
             pass
 
@@ -205,12 +219,12 @@ class PacketIO:
 
         self._buffer = QueueBuffer()
         self._new_packets: list[Packet] = []
-        self._packets: list[Packet] = []
-        self._length: int | None = None
+        self._packets: list[list[Packet]] = []
+        self._length: bytes | None = None
         self._send_buffer = QueueBuffer()
         self._max_send_buffer_length = max_send_buffer_length
 
-    def update(self, send_packets: list[Packet]) -> list[Packet] | str:
+    def update(self, send_packets: list[Packet]) -> list[list[Packet]] | str:
         try:
             while b := self._s.recv(2048):
                 # print(f'Received {len(b)} bytes')
@@ -229,7 +243,7 @@ class PacketIO:
             length = int.from_bytes(self._length, byteorder='big')
             # print(f'Packet size: {length}')
             if length == 0:
-                self._packets.extend(self._new_packets)
+                self._packets.append(self._new_packets)
                 self._new_packets = []
                 self._length = None
 
@@ -262,45 +276,63 @@ class PacketIO:
         # if s and len(self._send_buffer) == 0:
 
         p = self._packets
-        if send_packets or p:
+        if send_packets or sum(map(lambda x: len(x), p)) > 0:
             print(f'PacketIO: send_packets: {send_packets}, received: {p}')
         self._packets = []
         return p
 
 class NetServerClient:
-    def __init__(self, s: socket.socket):
+    def __init__(self, s: socket.socket, packets_to_send: list[Packet]):
         self._s = s
         self._state = 0
         self._buffer = bytes()
 
         self._packet_io = PacketIO(s)
+        self._unsent_packets = packets_to_send.copy()
 
     def update(self, send_packets: list[Packet]) -> list[Packet] | str:
         if self._state == 0:
-            w = len(_CLIENT_HELLO) + len(_version)
+            self._unsent_packets.extend(send_packets)
+
+            w = len(_CLIENT_HELLO) + len(version)
             if len(self._buffer) < w:
                 try:
                     self._buffer += self._s.recv(w - len(self._buffer))
                 except BlockingIOError:
                     pass
-                # TODO: Handle IO errors
+                except ConnectionError as e:
+                    return f'Connection error while receiving client hello: {e!r}'
             else:
                 print('Server received client hello')
-                if self._buffer != _CLIENT_HELLO + _version:
-                    return f'Incorrect client hello {self._buffer!r}, expected: {_CLIENT_HELLO + _version}'
+                if self._buffer != _CLIENT_HELLO + version:
+                    return f'Incorrect client hello {self._buffer!r}, expected: {_CLIENT_HELLO + version}'
                 self._state = 1
-                self._buffer = _SERVER_HELLO + _version
+                self._buffer = _SERVER_HELLO + version
         elif self._state == 1:
+            self._unsent_packets.extend(send_packets)
+
             try:
                 sent = self._s.send(self._buffer)
             except BlockingIOError:
                 sent = 0
+            except ConnectionError as e:
+                return f'Connection error while sending server hello: {e!r}'
             self._buffer = self._buffer[sent:]
             if len(self._buffer) == 0:
                 self._state = 2
 
         elif self._state == 2:
-            return self._packet_io.update(send_packets)
+            if self._unsent_packets:
+                send_packets += self._unsent_packets
+                self._unsent_packets = []
+
+            p = []
+            ps = self._packet_io.update(send_packets)
+            if type(ps) is str:
+                return ps
+            for u in ps:
+                p.extend(u)
+            return p
 
         else:
             raise NotImplementedError(self._state)
@@ -312,11 +344,12 @@ class NetClient:  # TODO: This class is basically the same as NetServerClient
     def __init__(self, s: socket.socket):
         self._s = s
         self._state = 0
-        self._buffer = _CLIENT_HELLO + _version
+        self._buffer = _CLIENT_HELLO + version
 
         self._packet_io = PacketIO(s)
+        self._packets: list[list[Packet]] = []
 
-    def update(self, send_packets: list[Packet]) -> list[Packet] | str:
+    def update(self, send_packets: list[Packet]) -> list[Packet] | None | str:
         if self._state == 0:
             try:
                 sent = self._s.send(self._buffer)
@@ -327,7 +360,7 @@ class NetClient:  # TODO: This class is basically the same as NetServerClient
                 self._state = 1
 
         elif self._state == 1:
-            w = len(_SERVER_HELLO) + len(_version)
+            w = len(_SERVER_HELLO) + len(version)
             if len(self._buffer) < w:
                 try:
                     self._buffer += self._s.recv(w - len(self._buffer))
@@ -336,17 +369,21 @@ class NetClient:  # TODO: This class is basically the same as NetServerClient
                 # TODO: Handle IO errors
             else:
                 print('Client received server hello')
-                if self._buffer != _SERVER_HELLO + _version:
+                if self._buffer != _SERVER_HELLO + version:
                     return f'Incorrect server hello {self._buffer!r}'
                 self._state = 2
 
         elif self._state == 2:
-            return self._packet_io.update(send_packets)
+            self._packets.extend(self._packet_io.update(send_packets))
+            if len(self._packets) > 0:
+                return self._packets.pop(0)
+            else:
+                return None
 
         else:
             raise NotImplementedError(self._state)
 
-        return []
+        return None
 
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import enum
+import io
 import json
 import math
 import threading
@@ -12,7 +13,6 @@ import pygame
 import gui
 import net
 import render
-
 
 T = typing.TypeVar('T')
 
@@ -303,6 +303,7 @@ class Button(TileWithActivation):
             if clicked:
                 self._state = not self._state
         else:
+            # TODO: Make a function which updates self._state instead of sending a PacketButtonPress every frame the cursor is above a Button
             self._state = pressed
 
     def _serialise(self) -> bytes:
@@ -390,10 +391,11 @@ class Wires(Tile):
 
 
 class Level:
-    def __init__(self, screen_size: tuple[int, int], update_callback: typing.Callable[[list[net.Packet]], list[net.Packet]] | None = None, client: net.NetClient | None = None):
+    def __init__(self, screen_size: tuple[int, int], update_callback: typing.Callable[[typing.Self, list[net.Packet]], list[net.Packet]] | None = None, client: net.NetClient | None = None):
         self._level: dict[tuple[int, int], Tile] = {}
         self._logical_wires: MutSet[LogicalWire] = MutSet()
-        self._gates: list[Gate] = []
+        self._level_lock = threading.Lock()
+
         self.camera_x = 0.0  # The top-left of the screen is at this position
         self.camera_y = 0.0
         self.tile_size: float = max(screen_size[0] / 40, screen_size[1] / 40)
@@ -404,6 +406,7 @@ class Level:
 
         self._update_callback = update_callback
         self._client = client
+        self._client_allow_update = False
 
         self._render_back_buffer = pygame.Surface(screen_size)
         self._render_front_buffer = pygame.Surface(screen_size)
@@ -422,7 +425,9 @@ class Level:
         self._gui = gui.GuiGatePlacer(screen_size)
         self._gui.gui_wire = self._gui_wire
 
-    def _update(self, packets: list[net.Packet]):
+    def _update(self, packets: list[net.Packet]) -> io.BytesIO | None:
+        level_data = None
+
         for packet in packets:
             if isinstance(packet, net.PacketButtonActivate):
                 if (t := self._level.get((packet.x, packet.y))) and isinstance(t, Button):
@@ -448,7 +453,7 @@ class Level:
                         self._update_wire_connections(packet.x + offset[0], packet.y + offset[1], Wires.opposite_angle(c))
 
                 elif isinstance(tile, Gate):
-                    for i in [1, 7, 9]:
+                    for i in [1, 6, 8]:
                         i += tile.rotation * 3
                         i %= 12
                         self._update_wire_connections(packet.x, packet.y, i)
@@ -491,6 +496,9 @@ class Level:
                 for c in connections:
                     self._update_wire_connections(packet.x, packet.y, c)
 
+            elif isinstance(packet, net.PacketLevelDownload):
+                level_data = io.BytesIO(packet.level_data)
+
             else:
                 raise NotImplementedError(f'Handling packet of type {type(packet)} in Level._update')
 
@@ -511,20 +519,41 @@ class Level:
         for logical_wire in self._logical_wires:
             logical_wire.latch_output()
 
+        return level_data
+
     def _render_loop(self):
         packets = []
+
+        if self._client is None:
+            tick_rate = 20
+        else:
+            tick_rate = 60
+
         try:
+            self._level[(0, 0)] = Button(True)
             clock = pygame.time.Clock()
             while self._run:
-                clock.tick(20)  # 20
+                clock.tick(tick_rate)
+                if self._client is not None:
+                    if self._client_allow_update:
+                        self._client_allow_update = False
+                        print('Running')
+                    else:
+                        print('Waiting')
+                        continue
 
                 if self._update_callback is None:
                     packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
                 else:
-                    packets = self._update_callback(packets)
+                    packets = self._update_callback(self, packets)
                     if type(packets) is str:
                         raise ValueError(packets)
-                self._update(packets)
+                with self._level_lock:
+                    level_data = self._update(packets)
+                if level_data is not None:
+                    level_packets = self.deserialise(level_data)
+                    with self._level_lock:
+                        self._update(level_packets)
 
                 s: pygame.Surface = self._render_back_buffer
                 s.fill((30, 0, 0))
@@ -584,10 +613,16 @@ class Level:
             if self._client is None:
                 self._renderer_to_server_queue.extend(self._new_packets)
             else:
-                p = self._client.update(self._new_packets)
-                if type(p) is str:
-                    raise ValueError(p)
-                self._renderer_to_server_queue.extend(p)
+                if not self._client_allow_update:
+                    p = self._client.update(self._new_packets)
+                    if type(p) is str:
+                        raise ValueError(p)
+                    elif p is not None:
+                        self._renderer_to_server_queue.extend(p)
+
+                        if self._client_allow_update:
+                            raise TimeoutError(f'Server is running faster than client')
+                        self._client_allow_update = True
             self._new_packets = []
 
     def get_tile_at_pos(self, x: int, y: int) -> Tile | None:
@@ -679,3 +714,65 @@ class Level:
                 raise NotImplementedError(f'_update_wire_connections: {tile.__class__.__name__}')
 
             self._logical_wires.add(logical_wire)
+
+    @staticmethod
+    def _level_header() -> bytes:
+        return b'TransistorBasedLevel' + net.version
+
+    def serialise(self, file: typing.BinaryIO) -> None:
+        with self._level_lock:
+            file.write(self._level_header())
+
+            file.write(len(self._level).to_bytes(4, 'big'))
+
+            import zlib
+
+            z = zlib.compressobj()
+            for i in sorted(self._level):
+                tile = self._level[i]
+
+                file.write(z.compress(i[0].to_bytes(4, 'big', signed=True)))
+                file.write(z.compress(i[1].to_bytes(4, 'big', signed=True)))
+
+                s = tile.serialise()
+                file.write(z.compress(len(s).to_bytes(4, 'big')))
+                file.write(z.compress(s))
+
+            file.write(z.flush())
+
+    def deserialise(self, file: typing.BinaryIO) -> list[net.PacketTilePlace]:
+        """
+
+        :param file: Contains only the level.
+        :return:
+        """
+        self.camera_x = 0
+        self.camera_y = 0
+
+        out = []
+
+        with self._level_lock:
+            self._level = {}
+            self._logical_wires = MutSet()
+
+            expected_header = self._level_header()
+            header = file.read(len(expected_header))
+            if header != expected_header:
+                raise ValueError(f'Level has incorrect header {header!r}, expected: {expected_header!r}')
+
+            length = int.from_bytes(file.read(4), 'big')
+
+            import zlib, io
+            file = io.BytesIO(zlib.decompress(file.read()))
+
+            for _ in range(length):
+                x = int.from_bytes(file.read(4), 'big', signed=True)
+                y = int.from_bytes(file.read(4), 'big', signed=True)
+                s = int.from_bytes(file.read(4), 'big')
+                assert s != 0
+
+                t = Tile.deserialise(file.read(s))
+                out.append(net.PacketTilePlace(x, y, t))
+                # self._level[(x, y)] = t
+
+        return out
