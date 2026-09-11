@@ -125,18 +125,30 @@ class GuiSimpleWirePlacer(Gui):
         if focused and empty:
             grid_color = (60, 0, 0)
             mouse_tile_pos = screen_to_tile_pos(*mouse_pos)
-            for x in range(-1, 2):
-                for y in range(-1, 2):
+            circle_size = level.tile_size * 1.75
+
+            def c(pos):
+                d = math.sqrt((mouse_pos[0] - pos[0]) ** 2 + (mouse_pos[1] - pos[1]) ** 2)
+                if d > circle_size:
+                    return (
+                        (pos[0] - mouse_pos[0]) / d * circle_size + mouse_pos[0],
+                        (pos[1] - mouse_pos[1]) / d * circle_size + mouse_pos[1],
+                    )
+                else:
+                    return pos
+
+            for x in range(-2, 4):
+                for y in range(-2, 4):
                     draw_x = round((mouse_tile_pos[0] + x - level.camera_x) * level.tile_size)
                     draw_y = round((mouse_tile_pos[1] + y - level.camera_y) * level.tile_size)
                     pygame.draw.line(screen, grid_color,
-                                     (draw_x, draw_y),
-                                     (draw_x + level.tile_size, draw_y),
+                                     c((draw_x, draw_y)),
+                                     c((draw_x + level.tile_size, draw_y)),
                                      world.Tile.line_width_from_size(round(level.tile_size))
                                      )
                     pygame.draw.line(screen, grid_color,
-                                     (draw_x, draw_y),
-                                     (draw_x, draw_y + level.tile_size),
+                                     c((draw_x, draw_y)),
+                                     c((draw_x, draw_y + level.tile_size)),
                                      world.Tile.line_width_from_size(round(level.tile_size))
                                      )
 
