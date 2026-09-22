@@ -414,6 +414,12 @@ class Level:
 
         self._run = True
 
+        self._levels_dirname: str = './levels'
+        self._level_name: str | None = None
+        if self._client is None and net.level_name is not None:
+            print(f'Loading level {net.level_name}')
+            self._renderer_to_server_queue.extend(self.load_level(net.level_name))
+
         self._render_thread = threading.Thread(target=self._render_loop, name='render_thread')
         self._render_thread.start()
 
@@ -498,6 +504,10 @@ class Level:
 
             elif isinstance(packet, net.PacketLevelDownload):
                 level_data = io.BytesIO(packet.level_data)
+                self._level_name = packet.level_name
+
+                print('Loading level from server and saving backup')
+                self.save_level(packet.serialise(), self._level_name, add_time=True)
 
             else:
                 raise NotImplementedError(f'Handling packet of type {type(packet)} in Level._update')
@@ -530,22 +540,24 @@ class Level:
             tick_rate = 60
 
         try:
-            self._level[(0, 0)] = Button(True)
             clock = pygame.time.Clock()
             while self._run:
                 clock.tick(tick_rate)
                 if self._client is not None:
                     if self._client_allow_update:
                         self._client_allow_update = False
-                        print('Running')
                     else:
-                        print('Waiting')
                         continue
 
                 if self._update_callback is None:
                     packets, self._renderer_to_server_queue = self._renderer_to_server_queue, []
                 else:
                     packets = self._update_callback(self, packets)
+
+                    # Process the initial level loading
+                    packets.extend(self._renderer_to_server_queue)
+                    self._renderer_to_server_queue = []
+
                     if type(packets) is str:
                         raise ValueError(packets)
                 with self._level_lock:
@@ -567,6 +579,14 @@ class Level:
         finally:
             self._run = False
 
+            if self._client is None:
+                level_name = net.level_name
+                print(f'Server: saving level {level_name}')
+                f = io.BytesIO()
+                self.serialise(f)
+                assert level_name is not None, 'Server should not be running without a level file'
+                self.save_level(net.PacketLevelDownload(f.getvalue(), level_name).serialise(), level_name)
+
     def _render(self, screen: pygame.Surface, camera_x: float, camera_y: float):
         # print('camera position:', self.camera_x, self.camera_y)
         for y_idx in range(-1, math.ceil(screen.get_height() / self.tile_size) + 1):
@@ -579,6 +599,34 @@ class Level:
                 if (x_pos, y_pos) in self._level:
                     t = self._level[(x_pos, y_pos)]
                     t.render(screen, round(x), round(y), math.ceil(self.tile_size))
+
+    def save_level(self, level_download_packet: bytes, level_name: str, add_time: bool = False) -> None:
+        import os, datetime
+        os.makedirs(self._levels_dirname, exist_ok=True)
+
+        if add_time:
+            t = f'{datetime.datetime.now().isoformat(timespec="seconds")}-'
+        else:
+            t = ''
+        level_name = f'{t}{level_name}.trbased'
+        f = os.path.join(self._levels_dirname, level_name)
+        with open(f, 'wb') as file:
+            file.write(level_download_packet)
+
+    def load_level(self, level_name: str) -> list[net.PacketTilePlace]:
+        """May raise FileNotFoundError or ValueError"""
+        import os
+
+        level_name = f'{level_name}.trbased'
+        f = os.path.join(self._levels_dirname, level_name)
+        with open(f, 'rb') as file:
+            level_packet = file.read()
+        level_packet = net.Packet.deserialise(level_packet)
+        if not isinstance(level_packet, net.PacketLevelDownload):
+            raise ValueError(f'Level data of level {f} is of type {level_packet.__class__.__name__}, should be: {net.PacketLevelDownload.__name__}')
+        r = self.deserialise(io.BytesIO(level_packet.level_data))
+        self._level_name = level_name
+        return r
 
     def _screen_to_tile_pos(self, x: int, y: int) -> tuple[int, int]:
         x_idx = math.floor(self.camera_x + x / self.tile_size)
@@ -606,9 +654,12 @@ class Level:
 
             if self._client is None:
                 self._renderer_to_server_queue.extend(self._new_packets)
+                self._new_packets = []
             else:
                 if not self._client_allow_update:
-                    p = self._client.update(self._new_packets)
+                    new_packets = self._new_packets
+                    self._new_packets = []
+                    p = self._client.update(new_packets)
                     if type(p) is str:
                         raise ValueError(p)
                     elif p is not None:
@@ -617,7 +668,6 @@ class Level:
                         if self._client_allow_update:
                             raise TimeoutError(f'Server is running faster than client')
                         self._client_allow_update = True
-            self._new_packets = []
 
     def get_tile_at_pos(self, x: int, y: int) -> Tile | None:
         return self._level.get((x, y))

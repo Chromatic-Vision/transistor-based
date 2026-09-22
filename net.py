@@ -4,6 +4,7 @@ import abc
 import io
 import json
 import socket
+import sys
 import typing
 
 # Inspired by Factorio: https://www.factorio.com/blog/post/fff-147#:~:text=Clients%20receive%20merged%20package%20once%20per%20tick
@@ -113,15 +114,23 @@ class PacketTileRemove(Packet):
 
 
 class PacketLevelDownload(Packet):
-    def __init__(self, level_data: bytes):
+    def __init__(self, level_data: bytes, level_name: str):
         self.level_data = level_data
+        self.level_name = level_name
 
     def _serialise(self) -> bytes:
-        return self.level_data
+        level_name = self.level_name.encode('utf-8')
+        return len(level_name).to_bytes(1, 'big') + level_name + self.level_data
 
     @classmethod
     def _deserialise(cls, data: bytes) -> typing.Self:
-        return cls(data)
+        try:
+            level_name_length = data[0]
+            return cls(data[level_name_length + 1:], data[1:level_name_length + 1].decode('utf-8'))
+        except IndexError:
+            raise ValueError('PacketLevelDownload: IndexError')
+        except UnicodeError:
+            raise ValueError('PacketLevelDownload: Invalid level_name')
 
 
 _CLIENT_HELLO = b'TransistorBasedClient'  # VERSION: u16 u16 u16
@@ -130,6 +139,15 @@ _SERVER_HELLO = b'TransistorBasedServer'
 
 VERSION = (0, 0, 1)
 version = b''.join(v.to_bytes(2, 'big') for v in VERSION)
+
+if len(sys.argv) > 1:
+    level_name = sys.argv[1]
+else:
+    try:
+        with open('levelname.txt', 'r') as file:
+            level_name = file.read()
+    except FileNotFoundError:
+        level_name = None
 
 
 class NetServer:
@@ -140,6 +158,11 @@ class NetServer:
 
         self._clients: list[NetServerClient] = []
 
+        if level_name is None:
+            raise RuntimeError('Hosting a server requires that the level name be specified on the command line or in levelname.txt')
+        assert type(level_name) is str
+        self._level_name = level_name
+
     def update(self, level: world.Level, new_packets: list[Packet]) -> list[Packet]:
         try:
             client_socket, client_address = self._server_socket.accept()
@@ -147,7 +170,9 @@ class NetServer:
             print(f'Client connected from address: {client_address!r}')
             level_data = io.BytesIO()
             level.serialise(level_data)
-            self._clients.append(NetServerClient(client_socket, [PacketLevelDownload(level_data.getvalue())]))
+            p = PacketLevelDownload(level_data.getvalue(), self._level_name)
+            level.save_level(p.serialise(), self._level_name, add_time=True)
+            self._clients.append(NetServerClient(client_socket, [p]))
         except BlockingIOError:
             pass
 
