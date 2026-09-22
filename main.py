@@ -9,6 +9,10 @@ import cursors
 import net
 
 address = ('localhost', 60_001)
+# address = None
+host = False
+
+# TODO: use XInput2 to get precise scrolling on x11
 
 set_videodriver = False
 if 'SDL_VIDEODRIVER' not in os.environ:
@@ -20,7 +24,7 @@ try:
     pygame.display.init()
 except pygame.error:
     if set_videodriver:
-        print('Not able to use x11')
+        print(f'Not able to use {os.environ["SDL_VIDEODRIVER"]}')
         os.environ.pop('SDL_VIDEODRIVER')
         pygame.display.init()
     else:
@@ -33,16 +37,20 @@ screen = pygame.display.set_mode((0, 0), pygame.RESIZABLE)
 cursors.init()
 
 CAMERA_SPEED = 20  # blocks/s
-tick_rate = 20
 
-if address is not None:
-    s = socket.socket()
-    s.connect(address)
-    s.settimeout(0)
-    client = net.NetClient(s)
+if host:
+    if address is not None:
+        s = socket.socket()
+        s.connect(address)
+        s.settimeout(0)
+        client = net.NetClient(s)
+    else:
+        client = None
+    level = world.Level(screen.get_size(), client=client)
 else:
-    client = None
-level = world.Level(screen.get_size(), client=client)
+    s = net.NetServer(*address)
+
+    level = world.Level(screen.get_size(), s.update)
 
 clock = pygame.time.Clock()
 run = True
@@ -56,10 +64,7 @@ try:
                 run = False
             elif event.type == pygame.MOUSEWHEEL:
                 # TODO: Zoom into the middle of the screen instead of top-left
-                if event.y > 0:
-                    level.tile_size *= 1.1
-                elif event.y < 0:
-                    level.tile_size /= 1.1
+                level.tile_size *= 1.1 ** event.precise_y
         screen.fill((0, 0, 0))
 
         keys = pygame.key.get_pressed()

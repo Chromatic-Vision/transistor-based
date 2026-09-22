@@ -193,8 +193,7 @@ class GuiSimpleWirePlacer(Gui):
                 )
 
                 a = wire_angle(from_angle, to_angle)
-                is_parallel_if_should_be = not (a == 2 and from_angle % 3 + to_angle % 3 != 2)
-                if a != 0 and is_parallel_if_should_be:
+                if a != 0:
                     w = level.get_tile_at_pos(*tile_pos)
                     if w is None or not isinstance(w, world.Wires):
                         c = {}
