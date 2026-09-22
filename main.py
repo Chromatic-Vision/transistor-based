@@ -38,7 +38,7 @@ cursors.init()
 
 CAMERA_SPEED = 20  # blocks/s
 
-if host:
+if not host:
     if address is not None:
         s = socket.socket()
         s.connect(address)

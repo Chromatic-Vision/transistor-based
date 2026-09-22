@@ -117,7 +117,7 @@ class GuiSimpleWirePlacer(Gui):
             empty = True
         if (
                 not self._has_connection(mouse_wire_pos_x, mouse_wire_pos_y, level)
-                and not mods & pygame.KMOD_CTRL
+                and not mods & pygame.KMOD_ALT
                 and self._mouse_held is None
         ):
             empty = False
@@ -295,6 +295,141 @@ class GuiSimpleWirePlacer(Gui):
         return False
 
 
+class GuiSelector(Gui):
+    def __init__(self, screen_size: tuple[int, int]):
+        self._selection_start: tuple[int, int] | None = None
+        self._selection_end: tuple[int, int] | None = None
+
+        self._copied: tuple[tuple[int, int], dict[tuple[int, int], bytes]] | None = None
+
+    def update_and_render(self, screen: pygame.Surface, level: world.Level):
+        import world
+
+        def screen_to_tile_pos(x: int, y: int) -> tuple[int, int]:
+            x_idx = math.floor(level.camera_x + x / level.tile_size)
+            y_idx = math.floor(level.camera_y + y / level.tile_size)
+            return x_idx, y_idx
+
+        def tile_to_screen_pos(x: int, y: int) -> tuple[int, int]:
+            return (
+                round((x - level.camera_x) * level.tile_size),
+                round((y - level.camera_y) * level.tile_size)
+            )
+
+        assert (self._selection_start is None) is (self._selection_end is None)
+
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_BACKSPACE or event.key == pygame.K_DELETE:
+                    if self._selection_start is not None and self._copied is None:
+                        for x, y in self._iter_selection():
+                            if level.get_tile_at_pos(x, y) is not None:
+                                level.place_tile_at_pos(x, y, None)
+                        self._selection_start = None
+                        self._selection_end = None
+
+                elif (event.key == pygame.K_c or event.key == pygame.K_x) and event.mod & pygame.KMOD_CTRL:
+                    if self._selection_start is not None and self._copied is None:
+                        tiles = {}
+                        start_x = min(self._selection_start[0], self._selection_end[0])
+                        start_y = min(self._selection_start[1], self._selection_end[1])
+                        for x, y in self._iter_selection():
+                            sx = x - start_x
+                            sy = y - start_y
+                            assert sx >= 0 and sy >= 0, (x, y)
+
+                            t = level.get_tile_at_pos(x, y)
+                            if t is not None:
+                                tiles[(sx, sy)] = t.serialise()
+
+                            if event.key == pygame.K_x:
+                                level.place_tile_at_pos(x, y, None)
+                        if tiles:
+                            self._copied = ((
+                                max(x for x, _ in tiles) + 1,
+                                max(y for _, y in tiles) + 1,
+                            ), tiles)
+
+                elif event.key == pygame.K_q:
+                    self._copied = None
+                    self._selection_start = None
+                    self._selection_end = None
+
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_click = pygame.mouse.get_just_pressed()
+        mouse_press = pygame.mouse.get_pressed()
+
+        gate_pos = screen_to_tile_pos(*mouse_pos)
+
+        if self._copied is None:
+            if mouse_click[0]:
+                self._selection_start = gate_pos
+
+            cursors.set_cursor(cursors.CursorType.CROSSHAIR)
+
+            if mouse_press[0]:
+                assert self._selection_start is not None
+
+                self._selection_end = (
+                    gate_pos[0] + (gate_pos[0] >= self._selection_start[0]),
+                    gate_pos[1] + (gate_pos[1] >= self._selection_start[1])
+                )
+
+        else:
+            # TODO: Allow the copy to be rotated
+
+            cursors.set_cursor()
+
+            self._selection_start = gate_pos
+            self._selection_end = (
+                self._selection_start[0] + self._copied[0][0],
+                self._selection_start[1] + self._copied[0][1]
+            )
+
+            if mouse_click[0]:
+                for x, y in self._iter_selection():
+                    sx = x - self._selection_start[0]
+                    sy = y - self._selection_start[1]
+                    if (sx, sy) in self._copied[1]:
+                        t = world.Tile.deserialise(self._copied[1][(sx, sy)])
+                        level.place_tile_at_pos(x, y, t)
+
+        if self._selection_start is not None:
+            from_ = tile_to_screen_pos(*self._selection_start)
+            to = tile_to_screen_pos(*self._selection_end)
+
+            pygame.draw.rect(screen, world.Activation.ON.color, (
+                min(from_[0], to[0]),
+                min(from_[1], to[1]),
+                abs(from_[0] - to[0]) + (self._selection_end[0] < self._selection_start[0]) * level.tile_size,
+                abs(from_[1] - to[1]) + (self._selection_end[1] < self._selection_start[1]) * level.tile_size
+            ), round(level.tile_size / 6))
+
+    def _iter_selection(self):
+        assert self._selection_start is not None
+        assert self._selection_end is not None
+
+        start_x = min(self._selection_start[0], self._selection_end[0])
+        end_x = abs(self._selection_start[0] - self._selection_end[0]) + (self._selection_end[0] < self._selection_start[0])
+        start_y = min(self._selection_start[1], self._selection_end[1])
+        end_y = abs(self._selection_start[1] - self._selection_end[1]) + (self._selection_end[1] < self._selection_start[1])
+        for x in range(start_x,
+                       start_x + end_x):
+            for y in range(start_y,
+                           start_y + end_y):
+                yield x, y
+
+    def give_precedence(self) -> bool:
+        if self._selection_start is not None:
+            return True
+        if self._copied is not None:
+            return True
+        key_mods = pygame.key.get_mods()
+        if key_mods & pygame.KMOD_CTRL:
+            return True
+        return False
+
+
 _NUMBER_KEYS = [
     pygame.K_0,
     pygame.K_1,
@@ -316,6 +451,7 @@ class GuiGatePlacer(Gui):
         import world
 
         self.gui_wire: GuiSimpleWirePlacer | None = None
+        self.gui_selector: GuiSelector | None = None
 
         self._last_removed: tuple[int, int] | None = None
 
@@ -370,11 +506,15 @@ class GuiGatePlacer(Gui):
         mouse_click = pygame.mouse.get_just_pressed()
         mouse_press = pygame.mouse.get_pressed()
 
+        if self.gui_selector.give_precedence():
+            self.gui_selector.update_and_render(screen, level)
+            return
+
         gate_pos = screen_to_tile_pos(*mouse_pos)
 
         if q_pressed:
             t = level.get_tile_at_pos(*gate_pos)
-            if t is None:
+            if t is None or isinstance(t, world.Wires):
                 self._selected = False
             elif isinstance(t, world.Gate):
                 self._render_gate._gate_type = t._gate_type

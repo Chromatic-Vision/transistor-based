@@ -428,8 +428,11 @@ class Level:
         self._gui_wire = gui.GuiSimpleWirePlacer(screen_size)
         self._gui_wire.gui_pan = self._gui_pan
 
+        self._gui_selector = gui.GuiSelector(screen_size)
+
         self._gui = gui.GuiGatePlacer(screen_size)
         self._gui.gui_wire = self._gui_wire
+        self._gui.gui_selector = self._gui_selector
 
     def _update(self, packets: list[net.Packet]) -> io.BytesIO | None:
         level_data = None
