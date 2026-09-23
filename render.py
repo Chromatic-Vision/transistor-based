@@ -61,7 +61,16 @@ def _parse_expression(expr: str) -> float:
         tokens = tokens[1:]
         return int(t)
 
-    return parse_add()
+    o = parse_add()
+    while tokens:
+        t = tokens.pop(0)
+        if t == '-':
+            o -= parse_add()
+        elif t == '+':
+            o += parse_add()
+        else:
+            raise NotImplementedError()
+    return o
 
 
 def render_path(screen: pygame.Surface, path: str, color, pos, scale: float, stroke_width: int = 1):
@@ -133,11 +142,12 @@ if __name__ == '__main__':
     assert abs(_parse_expression('1/3') - 0.3333333) < 0.01
     assert abs(_parse_expression('1/6') - 0.1666666) < 0.01
     assert abs(_parse_expression('1/2-1/12') - (1 / 2 - 1 / 12)) < 0.01
+    assert abs(_parse_expression('9/12-3/48+4/36') - (9 / 12 - 3 / 48 + 4 / 36)) < 0.01
 
     pygame.init()
     screen = pygame.display.set_mode((800, 800))
 
-    render(screen, 'NAND', (255, 255, 255), (0, 0), screen.get_width(), stroke_width=round(screen.get_width() / 13))
+    render(screen, 'TRANSISTOR', (255, 255, 255), (0, 0), screen.get_width(), stroke_width=round(screen.get_width() / (13 * 1)))
 
     # render_path(screen, '''
     # M 0 1/3
