@@ -1,0 +1,20 @@
+# 500 0 100:Een ALU uit transistoren
+500 0 100:000.png
+
+# 1000 0 30:Logic simulator
+1000 0 30:001.png
+
+# 1500 0 100:Transistoren
+1500 0 100:002.png
+
+# 2000 0 30:Logic gates
+2000 0 30:003.png
+
+# 2500 0 50:Full adder
+2500 0 50:004.png
+
+# 3000 0 50:Subtraction
+3000 0 50:005.png
+# 2997 -2 80:Subtraction
+
+# 62 -1 90:Einde

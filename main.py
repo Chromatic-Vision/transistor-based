@@ -10,7 +10,7 @@ import net
 
 address = ('localhost', 60_001)
 # address = None
-host = False
+host = True
 
 # TODO: use XInput2 to get precise scrolling on x11
 
@@ -37,6 +37,7 @@ screen = pygame.display.set_mode((0, 0), pygame.RESIZABLE)
 cursors.init()
 
 CAMERA_SPEED = 20  # blocks/s
+ENABLE_ARROW_KEYS = False
 
 if not host:
     if address is not None:
@@ -70,14 +71,14 @@ try:
         keys = pygame.key.get_pressed()
         camera_dx = 0
         camera_dy = 0
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        if keys[pygame.K_a] or (keys[pygame.K_LEFT] and ENABLE_ARROW_KEYS):
             camera_dx += -1
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        if keys[pygame.K_d] or (keys[pygame.K_RIGHT] and ENABLE_ARROW_KEYS):
             camera_dx += 1
 
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+        if keys[pygame.K_s] or (keys[pygame.K_DOWN] and ENABLE_ARROW_KEYS):
             camera_dy += 1
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
+        if keys[pygame.K_w] or (keys[pygame.K_UP] and ENABLE_ARROW_KEYS):
             camera_dy += -1
 
         level.update_camera_and_render(screen, camera_dx * CAMERA_SPEED, camera_dy * CAMERA_SPEED, dt)

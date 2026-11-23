@@ -13,6 +13,7 @@ import pygame
 import gui
 import net
 import render
+import slides
 
 T = typing.TypeVar('T')
 
@@ -420,6 +421,8 @@ class Level:
             print(f'Loading level {net.level_name}')
             self._renderer_to_server_queue.extend(self.load_level(net.level_name))
 
+        self._slides = slides.Slides()
+
         self._render_thread = threading.Thread(target=self._render_loop, name='render_thread')
         self._render_thread.start()
 
@@ -478,6 +481,8 @@ class Level:
             elif isinstance(packet, net.PacketTileRemove):
                 i = (packet.x, packet.y)
 
+                if i not in self._level:
+                    continue
                 tile = self._level[i]
                 connections = set()
                 if isinstance(tile, Wires):
@@ -574,6 +579,10 @@ class Level:
                 s.fill((30, 0, 0))
 
                 camera_x, camera_y = self.camera_x, self.camera_y
+
+                # TODO: This could be overwritten by the gui thread
+                self.camera_x, self.camera_y, self.tile_size = self._slides.render(s, camera_x, camera_y, self.tile_size)
+
                 self._render(s, camera_x, camera_y)
 
                 with self._render_buffer_swap_lock:
