@@ -81,19 +81,20 @@ class Tile(abc.ABC):
 
 
 class Activation(enum.Enum):
-    FLOATING    = enum.auto(), False, (75,  90,  115)
-    COMPETING   = enum.auto(), False, (156, 32,  6)
-    OFF         = enum.auto(), False, (255, 255, 255)
-    PULLED_DOWN = enum.auto(), False, (255, 255, 255)
-    PULLED_UP   = enum.auto(), True,  (80,  150, 255)
-    ON          = enum.auto(), True,  (80,  150, 255)
+    FLOATING    = enum.auto(), False, (75,  90,  115),  0
+    COMPETING   = enum.auto(), False, (156, 32,  6),    0
+    OFF         = enum.auto(), False, (255, 255, 255), -2
+    PULLED_DOWN = enum.auto(), False, (255, 200, 255), -1
+    PULLED_UP   = enum.auto(), True,  (80,  100, 255),  1
+    ON          = enum.auto(), True,  (80,  150, 255),  2
 
-    def __new__(cls, value, activated: bool, color: tuple[int, int, int]) -> typing.Self:
+    def __new__(cls, value, activated: bool, color: tuple[int, int, int], voltage: int) -> typing.Self:
         # https://softwareengineering.stackexchange.com/a/440441
         member = object.__new__(cls)
         member._value_ = value
         member.activated = activated
         member.color = color
+        member.voltage = voltage
         return member
 
     @classmethod
@@ -195,6 +196,142 @@ class Gate(TileWithActivation):
     def _deserialise(cls, data: bytes) -> typing.Self:
         data = json.loads(data.decode('utf-8'))
         tile = cls(GateType(data['gate_type']), NullGate(Activation.FLOATING), NullGate(Activation.FLOATING), data['rotation'])
+        tile._activation = Activation.__members__[data['activation']]
+        tile._new_activation = Activation.__members__[data['new_activation']]
+        return tile
+
+
+class Transistor(TileWithActivation):
+    _render_cache: dict[tuple[int, tuple[int, int, int]], pygame.Surface] = {}
+    _render_cache_lock = threading.Lock()
+
+    def __init__(self, rotation: int):
+        v = NullGate(Activation.FLOATING)
+        # self._input_collector = v
+        self._input_base = v
+        self._input_emitter = v
+
+        self.rotation = rotation
+
+        self._activation: Activation = Activation.FLOATING
+        self._new_activation: Activation = Activation.FLOATING
+
+    def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
+        with self._render_cache_lock:
+            k = (size_, self._activation.color)
+            if k not in _gate_cache:
+                s = pygame.Surface((size_, size_))
+                s.set_colorkey((0, 0, 0))
+                render.render(s, 'TRANSISTOR', Activation.OFF.color, (0, 0), size_, self.line_width_from_size(size_))
+                self._render_cache[k] = s
+            s = self._render_cache[k]
+
+            if self.rotation != 1:
+                s = pygame.transform.rotate(s, (-self.rotation + 0) * 90)
+            screen.blit(s, (x, y))
+
+    def get_activated(self) -> Activation:
+        return self._activation
+
+    def latch_input(self):
+        # c = self._input_collector.get_activated()
+        b = self._input_base.get_activated()
+        e = self._input_emitter.get_activated()
+
+        # I = U if R = 1
+        be_current = b.voltage - e.voltage
+        # print(f'{be_current=} {b.voltage=} {self._input_base=} {e.voltage=}')
+        if be_current > 3:
+            self._new_activation = Activation.COMPETING
+            return
+        elif be_current > 0 and b.voltage > 0 and e.voltage < 0:
+            self._new_activation = e
+        else:
+            self._new_activation = Activation.FLOATING
+
+    def latch_output(self):
+        self._activation = self._new_activation
+
+    # def unset_activation(self):
+    #     self._activation = Activation.FLOATING
+
+    def _serialise(self) -> bytes:
+        return json.dumps({
+            'rotation': self.rotation,
+
+            'activation': self._activation.name,
+            'new_activation': self._new_activation.name,
+        }).encode('utf-8')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        data = json.loads(data.decode('utf-8'))
+        tile = cls(data['rotation'])
+        tile._activation = Activation.__members__[data['activation']]
+        tile._new_activation = Activation.__members__[data['new_activation']]
+        return tile
+
+
+class Resistor(TileWithActivation):
+    _render_cache: dict[tuple[int, tuple[int, int, int]], pygame.Surface] = {}
+    _render_cache_lock = threading.Lock()
+
+    def __init__(self, rotation: int):
+        v = NullGate(Activation.FLOATING)
+        # self._input_collector = v
+        self._input = v
+
+        self.rotation = rotation
+
+        self._activation: Activation = Activation.FLOATING
+        self._new_activation: Activation = Activation.FLOATING
+
+    def render(self, screen: pygame.Surface, x: int, y: int, size_: int) -> None:
+        with self._render_cache_lock:
+            k = (size_, self._activation.color)
+            if k not in _gate_cache:
+                s = pygame.Surface((size_, size_))
+                s.set_colorkey((0, 0, 0))
+                render.render(s, 'RESISTOR', self._activation.color, (0, 0), size_, self.line_width_from_size(size_))
+                self._render_cache[k] = s
+            s = self._render_cache[k]
+
+            if self.rotation != 1:
+                s = pygame.transform.rotate(s, (-self.rotation + 1) * 90)
+            screen.blit(s, (x, y))
+
+    def get_activated(self) -> Activation:
+        return self._activation
+
+    def latch_input(self):
+        i = self._input.get_activated()
+
+        if i == Activation.ON:
+            self._new_activation = Activation.PULLED_UP
+        elif i == Activation.PULLED_UP:
+            self._new_activation = Activation.PULLED_UP
+        elif i == Activation.OFF:
+            self._new_activation = Activation.PULLED_DOWN
+        elif i == Activation.PULLED_DOWN:
+            self._new_activation = Activation.PULLED_DOWN
+        else:
+            self._new_activation = Activation.FLOATING
+
+    def latch_output(self):
+        self._activation = self._new_activation
+
+    def _serialise(self) -> bytes:
+        return json.dumps({
+            'rotation': self.rotation,
+
+            'activation': self._activation.name,
+            'new_activation': self._new_activation.name,
+        }).encode('utf-8')
+
+    @classmethod
+    def _deserialise(cls, data: bytes) -> typing.Self:
+        data = json.loads(data.decode('utf-8'))
+        tile = cls(data['rotation'])
         tile._activation = Activation.__members__[data['activation']]
         tile._new_activation = Activation.__members__[data['new_activation']]
         return tile
@@ -475,6 +612,18 @@ class Level:
                         i = i * 3 + 1
                         self._update_wire_connections(packet.x, packet.y, i)
 
+                elif isinstance(tile, Transistor):
+                    for i in [2, 6, 10]:
+                        i += tile.rotation * 3
+                        i %= 12
+                        self._update_wire_connections(packet.x, packet.y, i)
+
+                elif isinstance(tile, Resistor):
+                    for i in [1, 7]:
+                        i += tile.rotation * 3
+                        i %= 12
+                        self._update_wire_connections(packet.x, packet.y, i)
+
                 else:
                     raise NotImplementedError(f'Updating connections of tile type {self._level[i].__class__.__name__}')
 
@@ -499,6 +648,18 @@ class Level:
                 elif isinstance(tile, Button):
                     for r in range(4):
                         r = r * 3 + 1
+                        connections.add(r)
+
+                elif isinstance(tile, Transistor):
+                    for r in [2, 6, 10]:
+                        r += tile.rotation * 3
+                        r %= 12
+                        connections.add(r)
+
+                elif isinstance(tile, Resistor):
+                    for r in [1, 7]:
+                        r += tile.rotation * 3
+                        r %= 12
                         connections.add(r)
 
                 else:
@@ -526,13 +687,13 @@ class Level:
             logical_wire.latch_output()
 
         for (x, y), tile in self._level.items():
-            if isinstance(tile, Gate):
+            if isinstance(tile, Gate) or isinstance(tile, Transistor) or isinstance(tile, Resistor):
                 tile.latch_input()
         for logical_wire in self._logical_wires:
             logical_wire.latch_input()
 
         for (x, y), tile in self._level.items():
-            if isinstance(tile, Gate):
+            if isinstance(tile, Gate) or isinstance(tile, Transistor) or isinstance(tile, Resistor):
                 tile.latch_output()
         for logical_wire in self._logical_wires:
             logical_wire.latch_output()
@@ -765,6 +926,23 @@ class Level:
                     tile._input_b = logical_wire
                 elif a == 8:
                     tile._input_a = logical_wire
+
+            elif isinstance(tile, Transistor):
+                a = (from_angle - tile.rotation * 3) % 12
+                if a == 2:
+                    logical_wire.inputs.append(tile)
+                elif a == 10:
+                    tile._input_base = logical_wire
+                elif a == 6:
+                    tile._input_emitter = logical_wire
+
+            # TODO: It is not possible to directly connect a button and resistor
+            elif isinstance(tile, Resistor):
+                a = (from_angle - tile.rotation * 3) % 12
+                if a == 1:
+                    tile._input = logical_wire
+                elif a == 7:
+                    logical_wire.inputs.append(tile)
 
             else:
                 raise NotImplementedError(f'_update_wire_connections: {tile.__class__.__name__}')

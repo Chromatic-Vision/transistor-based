@@ -7,8 +7,18 @@
 # 1500 0 100:Transistoren
 1500 0 100:002.png
 
+# 1500 100 30:Transistor not gate
+1510 100 20:rl0.jpg
+
 # 2000 0 30:Logic gates
 2000 0 30:003.png
+
+# 2000 100 30:Transistor or gate
+
+# 2000 120 30:Transistor and gate
+
+# 2045 100 50:Transistor xor gate
+2070 100 25:xor-gate.png
 
 # 2500 0 50:Full adder
 2500 0 50:004.png

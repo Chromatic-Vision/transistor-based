@@ -289,6 +289,16 @@ class GuiSimpleWirePlacer(Gui):
                     if to == direction:
                         return True
 
+            elif isinstance(t, world.Transistor):
+                for di in (2, 6, 10):
+                    if direction == (t.rotation * 3 + di) % 12:
+                        return True
+
+            elif isinstance(t, world.Resistor):
+                for di in (1, 7):
+                    if direction == (t.rotation * 3 + di) % 12:
+                        return True
+
             else:
                 raise NotImplementedError(t.__class__.__name__)
 
@@ -463,6 +473,10 @@ class GuiGatePlacer(Gui):
         self._button_selected = False
         self._button = world.Button(True)
         self._render_gate = world.Gate(world.GateType.AND, self._gate_input, self._gate_input, self._rotation)
+        self._transistor_selected = False
+        self._render_transistor = world.Transistor(self._rotation)
+        self._resistor_selected = False
+        self._render_resistor = world.Resistor(self._rotation)
 
     def _set_render_tile_activation(self, gate_activation: world.Activation):
         self._gate_input._activated = gate_activation
@@ -491,10 +505,24 @@ class GuiGatePlacer(Gui):
                     if i < len(gate_types):
                         self._selected = True
                         self._button_selected = False
+                        self._transistor_selected = False
+                        self._resistor_selected = False
                         self._render_gate._gate_type = gate_types[i]
                     elif i == len(gate_types):
                         self._selected = True
                         self._button_selected = True
+                        self._transistor_selected = False
+                        self._resistor_selected = False
+                    elif i == len(gate_types) + 1:
+                        self._selected = True
+                        self._button_selected = False
+                        self._transistor_selected = True
+                        self._resistor_selected = False
+                    elif i == len(gate_types) + 2:
+                        self._selected = True
+                        self._button_selected = False
+                        self._transistor_selected = False
+                        self._resistor_selected = True
 
         def screen_to_tile_pos(x: int, y: int) -> tuple[int, int]:
             x_idx = math.floor(level.camera_x + x / level.tile_size)
@@ -516,14 +544,28 @@ class GuiGatePlacer(Gui):
             t = level.get_tile_at_pos(*gate_pos)
             if t is None or isinstance(t, world.Wires):
                 self._selected = False
-            elif isinstance(t, world.Gate):
-                self._render_gate._gate_type = t._gate_type
-                self._rotation = t.rotation
-                self._selected = True
                 self._button_selected = False
+                self._transistor_selected = False
+                self._resistor_selected = False
+            elif isinstance(t, world.Gate):
+                if self._render_gate._gate_type == t._gate_type:
+                    self._selected = False
+                    self._button_selected = False
+                    self._transistor_selected = False
+                    self._resistor_selected = False
+                else:
+                    self._render_gate._gate_type = t._gate_type
+                    self._rotation = t.rotation
+                    self._selected = True
+                    self._button_selected = False
+                    self._transistor_selected = False
+                    self._resistor_selected = False
             elif isinstance(t, world.Button):
                 self._selected = True
                 self._button_selected = True
+                self._transistor_selected = False
+                self._resistor_selected = False
+            # TODO: Transistor
 
         if mouse_press[2]:
             cursors.set_cursor(cursors.CursorType.CELL)
@@ -544,14 +586,7 @@ class GuiGatePlacer(Gui):
         self._set_render_tile_activation(world.Activation.FLOATING)
 
         self._render_gate.rotation = self._rotation
-        if not self._button_selected:
-            self._render_gate.render(
-                screen,
-                round((gate_pos[0] - level.camera_x) * level.tile_size),
-                round((gate_pos[1] - level.camera_y) * level.tile_size),
-                math.ceil(level.tile_size)
-            )
-        else:
+        if self._button_selected:
             self._button.render(
                 screen,
                 round((gate_pos[0] - level.camera_x) * level.tile_size),
@@ -559,9 +594,41 @@ class GuiGatePlacer(Gui):
                 math.ceil(level.tile_size),
                 c=world.Activation.FLOATING
             )
+        elif self._transistor_selected:
+            self._render_transistor.render(
+                screen,
+                round((gate_pos[0] - level.camera_x) * level.tile_size),
+                round((gate_pos[1] - level.camera_y) * level.tile_size),
+                math.ceil(level.tile_size)
+            )
+        elif self._resistor_selected:
+            self._render_resistor.render(
+                screen,
+                round((gate_pos[0] - level.camera_x) * level.tile_size),
+                round((gate_pos[1] - level.camera_y) * level.tile_size),
+                math.ceil(level.tile_size)
+            )
+        else:
+            self._render_gate.render(
+                screen,
+                round((gate_pos[0] - level.camera_x) * level.tile_size),
+                round((gate_pos[1] - level.camera_y) * level.tile_size),
+                math.ceil(level.tile_size)
+            )
 
         if mouse_click[0]:
+            if self._button_selected:
+                v = self._button
+            elif self._transistor_selected:
+                v = self._render_transistor
+                v.rotation = self._rotation
+            elif self._resistor_selected:
+                v = self._render_resistor
+                v.rotation = self._rotation
+            else:
+                v = self._render_gate
+
             level.place_tile_at_pos(
                 gate_pos[0], gate_pos[1],
-                self._button if self._button_selected else self._render_gate  # level makes a copy
+                v  # level makes a copy
             )

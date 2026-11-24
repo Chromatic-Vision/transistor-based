@@ -92,8 +92,6 @@ class Slides:
                 set_slide(self._current_slide)
         self._previous_keys = (keys[pygame.K_LEFT], keys[pygame.K_RIGHT])
 
-        pygame.draw.rect(screen, (0, 255, 0), (-camera_x * tile_size, -camera_y * tile_size, tile_size * 10, tile_size * 10))
-
         for rect, image in self._images:
             r = pygame.Rect(
                 (rect.x - camera_x) * tile_size,

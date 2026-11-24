@@ -147,7 +147,7 @@ if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode((800, 800))
 
-    render(screen, 'TRANSISTOR', (255, 255, 255), (0, 0), screen.get_width(), stroke_width=round(screen.get_width() / (13 * 1)))
+    render(screen, 'RESISTOR', (255, 255, 255), (0, 0), screen.get_width(), stroke_width=round(screen.get_width() / (13 * 1)))
 
     # render_path(screen, '''
     # M 0 1/3
